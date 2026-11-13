@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>LX Source Sandbox</title>
+  <script src="vendor/crypto-js.min.js"></script>
+  <script src="vendor/mf_runtime.js"></script>
+</head>
+<body>
+<script>
+/*
+ * 洛雪音源运行时 v2（HarmonyOS ArkWeb 沙箱）
+ *
+ * 与 v1 的区别：一个页面里可以同时挂载多个音源脚本，每个脚本有独立的
+ * handlers / inited / currentScriptInfo，切换音源不再重新加载整页。
+ * 这样「聚合搜索」「多音源取链回退」「并发自检」才真正可用。
+ *
+ * 与原生通信：lxNative.call(JSON)
+ *   {type:'ready'} / {type:'inited', inst, data} / {type:'http', inst, id, url, options}
+ *   {type:'result', inst, id, ok, dataText|error} / {type:'log', inst, text} / {type:'error', inst, error}
+ */
+(function () {
+  var instances = {};
+  var httpSeq = 0;
+  var httpPending = {};
+  /**
+   * 全局 lx 的调度状态。
+   * 一个 ArkWeb 页面里驻留多个音源，window.lx 只能是单值。脚本顶层解构
+   * `const {request} = globalThis.lx` 时拿到的是各自的实例（没问题），但异步
+   * 回调里再读 globalThis.lx 就会读到「最后加载 / 被设为首选」的那个。
+   * 调用期间把它切到目标实例，结束后按引用计数恢复到 __setActive 指定的
+   * 基准实例，至少保证「正在取链的音源」不会串到首选身上。
+   */
+  var baseLx = null;
+  var lxCallCount = 0;
+  var EVENT_NAMES = {
+    inited: 'inited',
+    request: 'request',
+    updateAlert: 'updateAlert',
+    updateConfiguration: 'updateConfiguration',
+    requestResult: 'requestResult',
+    showConfigView: 'showConfigView'
+  };
+
+  function toNative(obj) {
+    try {
+      lxNative.call(JSON.stringify(obj));
+    } catch (e) {
+      // 桥未就绪时忽略
+    }
+  }
+
+  function log(inst, text) {
+    toNative({ type: 'log', inst: inst, text: String(text) });
+  }
+
+  /* ---------------- 二进制工具 ---------------- */
+  function wordArrayToBytes(wordArray) {
+    var bytes = new Uint8Array(wordArray.sigBytes);
+    for (var i = 0; i < wordArray.sigBytes; i++) {
+      bytes[i] = (wordArray.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff;
+    }
+    return bytes;
+  }
+
+  function bytesToWordArray(bytes) {
+    var words = [];
+    for (var i = 0; i < bytes.length; i++) {
+      words[i >>> 2] |= (bytes[i] & 0xff) << (24 - (i % 4) * 8);
+    }
+    return CryptoJS.lib.WordArray.create(words, bytes.length);
+  }
+
+  function toBytes(data) {
+    if (data === null || data === undefined) return new Uint8Array(0);
+    if (data instanceof Uint8Array) return data;
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (data && data.sigBytes !== undefined) return wordArrayToBytes(data);
+    if (typeof data === 'string') return new TextEncoder().encode(data);
+    if (Array.isArray(data)) return new Uint8Array(data);
+    if (data.buffer instanceof ArrayBuffer) return new Uint8Array(data.buffer);
+    return new Uint8Array(0);
+  }
+
+  function bytesToBase64(bytes) {
+    var binary = '';
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
+  function base64ToBytes(text) {
+    var binary = atob(text);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  function bytesToUtf8(bytes) {
+    try {
+      return new TextDecoder('utf-8').decode(bytes);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  /* ---------------- 响应体：对象 / 字符串双兼容 ---------------- */
+  /*
+   * 洛雪官方 request() 的 resp.body 语义是「JSON 响应解析成对象」，但第三方
+   * 音源写法并不统一：
+   *   - ikun / huibq / juhe / 星海 / 杰翔：直接 body.code / body.data / body.url
+   *   - 全豆要 / 聚合音源：body.trim() 后自己 JSON.parse
+   * 只给原始字符串，第一类会抛 "unknow error"；只给纯对象，第二类会抛
+   * "body.trim is not a function"。这里用 String 包装对象并挂上解析出的
+   * 字段，两种写法都能跑（trim / toString / JSON.parse 也都还可用）。
+   */
+  function makeBody(raw, headers) {
+    var text = typeof raw === 'string' ? raw : String(raw === undefined || raw === null ? '' : raw);
+    var contentType = String((headers && (headers['content-type'] || headers['Content-Type'])) || '').toLowerCase();
+    var trimmed = text.trim();
+    var head = trimmed.charAt(0);
+    var tail = trimmed.charAt(trimmed.length - 1);
+    var looksJson = contentType.indexOf('json') >= 0 ||
+      (contentType.indexOf('text/plain') >= 0 && (head === '{' || head === '[')) ||
+      (((head === '{' && tail === '}') || (head === '[' && tail === ']')) && contentType.indexOf('html') < 0);
+    var parsed = null;
+    if (looksJson) {
+      try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+    }
+    if (parsed === null || typeof parsed !== 'object') {
+      return text;
+    }
+    var wrapped = new String(text);
+    for (var k in parsed) {
+      if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
+      if (k === 'length' || k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      try { wrapped[k] = parsed[k]; } catch (e) { /* 只读属性忽略 */ }
+    }
+    try { wrapped.__parsed = parsed; } catch (e) { /* 忽略 */ }
+    return wrapped;
+  }
+
+  /* ---------------- AES ---------------- */
+  function aesOptions(mode, iv) {
+    var m = String(mode || '').toLowerCase();
+    var options = {
+      mode: m.indexOf('ecb') >= 0 ? CryptoJS.mode.ECB : CryptoJS.mode.CBC,
+      padding: CryptoJS.pad.Pkcs7
+    };
+    if (m.indexOf('ecb') < 0 && iv) {
+      options.iv = CryptoJS.enc.Utf8.parse(String(iv));
+    }
+    return options;
+  }
+
+  function aesEncrypt(data, mode, key, iv) {
+    var encrypted = CryptoJS.AES.encrypt(
+      CryptoJS.enc.Utf8.parse(String(data)),
+      CryptoJS.enc.Utf8.parse(String(key)),
+      aesOptions(mode, iv)
+    );
+    return wordArrayToBytes(encrypted.ciphertext);
+  }
+
+  function aesDecrypt(data, mode, key, iv) {
+    var cipherParams = CryptoJS.lib.CipherParams.create({ ciphertext: bytesToWordArray(toBytes(data)) });
+    var decrypted = CryptoJS.AES.decrypt(cipherParams, CryptoJS.enc.Utf8.parse(String(key)), aesOptions(mode, iv));
+    return decrypted.toString(CryptoJS.enc.Utf8);
+  }
+
+  /* ---------------- RSA (PKCS#1 v1.5) ---------------- */
+  function pemToDer(pem) {
+    var text = String(pem || '').replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+    return base64ToBytes(text);
+  }
+
+  function asn1Read(bytes, offset) {
+    var tag = bytes[offset];
+    var lenByte = bytes[offset + 1];
+    var len = lenByte;
+    var cursor = offset + 2;
+    if ((lenByte & 0x80) !== 0) {
+      var count = lenByte & 0x7f;
+      len = 0;
+      for (var i = 0; i < count; i++) {
+        len = (len << 8) | bytes[cursor + i];
+      }
+      cursor += count;
+    }
+    return { tag: tag, start: cursor, end: cursor + len };
+  }
+
+  function bytesToBigInt(bytes) {
+    var hex = '';
+    for (var i = 0; i < bytes.length; i++) {
+      var t = bytes[i].toString(16);
+      hex += t.length === 1 ? '0' + t : t;
+    }
+    return hex.length === 0 ? 0n : BigInt('0x' + hex);
+  }
+
+  function bigIntToBytes(value, size) {
+    var hex = value.toString(16);
+    if (hex.length % 2 === 1) hex = '0' + hex;
+    var out = new Uint8Array(size);
+    var raw = new Uint8Array(hex.length / 2);
+    for (var i = 0; i < raw.length; i++) raw[i] = parseInt(hex.substr(i * 2, 2), 16);
+    out.set(raw, size - raw.length);
+    return out;
+  }
+
+  function modPow(base, exponent, modulus) {
+    var result = 1n;
+    var b = base % modulus;
+    var e = exponent;
+    while (e > 0n) {
+      if (e & 1n) result = (result * b) % modulus;
+      b = (b * b) % modulus;
+      e = e >> 1n;
+    }
+    return result;
+  }
+
+  function parseRsaKey(pem) {
+    var der = pemToDer(pem);
+    var top = asn1Read(der, 0);
+    var first = asn1Read(der, top.start);
+    var keySeqStart;
+    if (first.tag === 0x30) {
+      // SPKI: SEQUENCE { SEQUENCE alg, BIT STRING }
+      var bit = asn1Read(der, first.end);
+      keySeqStart = bit.start + 1;
+    } else {
+      keySeqStart = top.start;
+    }
+    var keySeq = asn1Read(der, keySeqStart);
+    var nNode = asn1Read(der, keySeq.start);
+    var eNode = asn1Read(der, nNode.end);
+    return {
+      n: bytesToBigInt(der.slice(nNode.start, nNode.end)),
+      e: bytesToBigInt(der.slice(eNode.start, eNode.end))
+    };
+  }
+
+  function rsaEncrypt(data, pem) {
+    var key = parseRsaKey(pem);
+    var message = toBytes(data);
+    var k = Math.ceil(key.n.toString(16).length / 2);
+    if (message.length > k - 11) {
+      throw new Error('RSA 明文过长');
+    }
+    var em = new Uint8Array(k);
+    em[0] = 0;
+    em[1] = 2;
+    var psLen = k - message.length - 3;
+    for (var i = 0; i < psLen; i++) {
+      var r = 0;
+      while (r === 0) r = Math.floor(Math.random() * 256);
+      em[2 + i] = r;
+    }
+    em[2 + psLen] = 0;
+    em.set(message, 3 + psLen);
+    var m = bytesToBigInt(em);
+    var c = modPow(m, key.e, key.n);
+    return bigIntToBytes(c, k);
+  }
+
+  /* ---------------- 单个音源实例 ---------------- */
+  function createLx(instId) {
+    var inst = instances[instId];
+    var lx = {
+      // 对齐洛雪移动端协议版本：不少音源按 version 切换分支，也会把它拼进 User-Agent
+      version: '1.7.0',
+      env: 'mobile',
+      EVENT_NAMES: EVENT_NAMES,
+      currentScriptInfo: {
+        name: inst.name || '自定义音源',
+        version: inst.version || '1.0.0',
+        // 官方源 v2/v3 会用 md5(name + description) 做防篡改校验，
+        // description 留空会触发它的死循环分支，把整个沙箱拖垮
+        description: inst.description || '',
+        rawScript: inst.code || ''
+      },
+      on: function (event, handler) {
+        if (!inst.handlers[event]) inst.handlers[event] = [];
+        inst.handlers[event].push(handler);
+      },
+      send: function (event, data) {
+        if (event === 'inited') {
+          inst.inited = data;
+          toNative({ type: 'inited', inst: instId, data: data });
+        } else {
+          toNative({ type: 'event', inst: instId, event: event, data: data });
+        }
+      },
+      request: function (url, options, callback) {
+        if (typeof options === 'function') {
+          callback = options;
+          options = {};
+        }
+        options = options || {};
+        var promise = new Promise(function (resolve, reject) {
+          var id = 'h' + (++httpSeq);
+          httpPending[id] = { resolve: resolve, reject: reject };
+          toNative({ type: 'http', inst: instId, id: id, url: String(url), options: options || {} });
+        });
+        if (typeof callback === 'function') {
+          promise.then(function (resp) { callback(null, resp); }, function (err) { callback(err); });
+        }
+        return promise;
+      },
+      utils: {
+        crypto: {
+          md5: function (input) {
+            if (typeof input === 'string') return CryptoJS.MD5(input).toString();
+            return CryptoJS.MD5(bytesToWordArray(toBytes(input))).toString();
+          },
+          sha1: function (input) {
+            if (typeof input === 'string') return CryptoJS.SHA1(input).toString();
+            return CryptoJS.SHA1(bytesToWordArray(toBytes(input))).toString();
+          },
+          sha256: function (input) {
+            if (typeof input === 'string') return CryptoJS.SHA256(input).toString();
+            return CryptoJS.SHA256(bytesToWordArray(toBytes(input))).toString();
+          },
+          aesEncrypt: aesEncrypt,
+          aesDecrypt: aesDecrypt,
+          rsaEncrypt: rsaEncrypt,
+          randomBytes: function (size) {
+            var bytes = new Uint8Array(size || 16);
+            for (var i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+            return bytes;
+          }
+        },
+        buffer: {
+          from: function (data, enc) {
+            if (typeof data === 'string') {
+              if (enc === 'hex') return wordArrayToBytes(CryptoJS.enc.Hex.parse(data));
+              if (enc === 'base64') return base64ToBytes(data);
+              return new TextEncoder().encode(data);
+            }
+            return toBytes(data);
+          },
+          bufFrom: function (data, enc) { return this.from(data, enc); },
+          bufToString: function (buf, enc) {
+            var bytes = toBytes(buf);
+            if (enc === 'base64') return bytesToBase64(bytes);
+            if (enc === 'utf8' || enc === 'utf-8') return bytesToUtf8(bytes);
+            var hex = '';
+            for (var i = 0; i < bytes.length; i++) {
+              var t = bytes[i].toString(16);
+              hex += t.length === 1 ? '0' + t : t;
+            }
+            return hex;
+          },
+          concat: function (list) {
+            var total = 0;
+            for (var i = 0; i < list.length; i++) total += toBytes(list[i]).length;
+            var out = new Uint8Array(total);
+            var offset = 0;
+            for (var j = 0; j < list.length; j++) {
+              var part = toBytes(list[j]);
+              out.set(part, offset);
+              offset += part.length;
+            }
+            return out;
+          }
+        },
+        str2buf: function (str) { return new TextEncoder().encode(String(str)); },
+        buf2str: function (buf) { return bytesToUtf8(toBytes(buf)); }
+      }
+    };
+    return lx;
+  }
+
+  /* ---------------- 协议识别 ---------------- */
+  /*
+   * 洛雪脚本：IIFE + `lx.on(EVENT_NAMES.request, handler)` + `lx.send('inited')`，
+   *          顶层常解构 `globalThis.lx`。
+   * MusicFree 插件：CommonJS `module.exports = { platform, search, getMediaSource … }`，
+   *          用 require('axios') 等，宿主直接调具名方法，没有 inited 概念。
+   * 两者不兼容，必须分流。ArkTS 会显式传 kind（导入时已识别），这里保留自动兜底，
+   * 避免老备份恢复 / 手动塞脚本时没带 kind 就走错协议。
+   */
+  // v2.42：与 SourceRepo.detectKind 同款规则（双端一致）。
+  // 洛雪只认运行时 API 特征（@name 只是头注解，社区 MusicFree 插件也带中文 @name，
+  // 拿它当洛雪特征会误判）；MusicFree 认「装载痕迹 + 插件形状」，
+  // 覆盖混淆插件的 `module[混淆串]=plugin` + 顶层 `var axios=require(...)`。
+  function detectKind(code) {
+    var text = String(code || '');
+    if (/EVENT_NAMES\.request|lx\.on\s*\(|lx\.send\s*\(|globalThis\.lx|window\.lx/.test(text)) return 'lx';
+    var mfLoad = /\brequire\s*\(|module\.exports\s*=|module\s*\[|Object\.defineProperty\(\s*exports|export\s+default|__esModule|exports\.default/.test(text);
+    var mfShape = /platform\s*:|getMediaSource|getLyric|getAlbumInfo|getTopListDetail|\bsearch\s*\(|isEnd/.test(text);
+    return (mfLoad && mfShape) ? 'musicfree' : 'lx';
+  }
+
+  /**
+   * MusicFree 分支：用 MFRuntime 以 CommonJS 方式装载插件，
+   * 再把导出的具名方法包成一个洛雪 request handler 注册到本实例。
+   * 这样 __emit / __setActive / 原生 HTTP 代理 / 取链 / 歌词链路一条都不用改。
+   */
+  function loadMusicFree(instId, code, inst) {
+    var lxObj = createLx(instId);
+    inst.lx = lxObj;
+    window.lx = lxObj;
+    if (baseLx === null) baseLx = lxObj;
+    window.EVENT_NAMES = EVENT_NAMES;
+    try {
+      var mf = window.MFRuntime.load(instId, code, {
+        lx: lxObj,
+        log: function (text) { log(instId, text); }
+      });
+      inst.kind = 'musicfree';
+      inst.name = mf.name;
+      inst.version = mf.version;
+      inst.description = mf.author ? ('作者 ' + mf.author) : '';
+      inst.updateUrl = mf.srcUrl;
+      inst.mf = mf;
+      // 单一 handler：把洛雪 action 翻译成插件的具名方法调用
+      inst.handlers[EVENT_NAMES.request] = [function (args) {
+        return mf.request(args.action, args);
+      }];
+      inst.loaded = true;
+      toNative({ type: 'loaded', inst: instId, kind: 'musicfree', name: mf.name, version: mf.version, updateUrl: mf.srcUrl });
+      // 合成 inited：洛雪协议要求「上报可用平台」才允许取链。
+      // sourceId 用 mf:<instId>，保证只有产出这首歌的插件能认领它。
+      var src = {};
+      src[mf.sourceId] = {
+        name: mf.platform,
+        qualitys: ['128k', '320k', 'flac', 'hires'],
+        actions: mf.actions
+      };
+      inst.inited = { status: true, sources: src };
+      toNative({ type: 'inited', inst: instId, kind: 'musicfree', data: inst.inited });
+    } catch (e) {
+      inst.error = String(e && e.message ? e.message : e);
+      // 抛给调用方：__load 正常分支据此发 error，洛雪失败回退分支据此给出合并原因
+      throw new Error('MusicFree 插件装载失败: ' + inst.error);
+    }
+  }
+
+  /* ---------------- 宿主 API ---------------- */
+  var host = {
+    __load: function (instId, code, kind) {
+      instances[instId] = { id: instId, handlers: {}, inited: null, code: code, name: '', error: '' };
+      var inst = instances[instId];
+      var resolved = (kind === 'musicfree' || kind === 'lx') ? kind : detectKind(code);
+      inst.kind = resolved;
+      if (resolved === 'musicfree') {
+        try {
+          loadMusicFree(instId, code, inst);
+        } catch (err) {
+          toNative({ type: 'error', inst: instId,
+            error: String(err && err.message ? err.message : err) });
+        }
+        return;
+      }
+      // 头部注解有 /*! ... */ 与 /** ... */ 两种写法，取第一个含 @name 的块注释
+      var headerText = '';
+      var commentRe = /\/\*[\s\S]*?\*\//g;
+      var cm;
+      var scanned = 0;
+      while ((cm = commentRe.exec(code)) !== null && scanned < 30) {
+        scanned++;
+        if (headerText === '') headerText = cm[0];
+        if (/@name\s+/.test(cm[0])) { headerText = cm[0]; break; }
+      }
+      var nameMatch = /@name\s+(.+)/.exec(headerText);
+      var versionMatch = /@version\s+(.+)/.exec(headerText);
+      var descMatch = /@description\s+(.+)/.exec(headerText);
+      var updateMatch = /@update_url\s+(.+)/.exec(headerText);
+      inst.name = nameMatch ? nameMatch[1].trim() : '自定义音源';
+      inst.version = versionMatch ? versionMatch[1].trim() : '';
+      inst.description = descMatch ? descMatch[1].trim() : '';
+      inst.updateUrl = updateMatch ? updateMatch[1].trim() : '';
+      var lxObj = createLx(instId);
+      // 缓存本实例的 lx，供 __setActive 把全局 window.lx 指回首选用
+      inst.lx = lxObj;
+      // 宿主 API 一律挂到全局，绝不能当作 new Function 的形参：
+      // 洛雪 v2 脚本顶层普遍是 `const { EVENT_NAMES, ... } = globalThis.lx`，
+      // 形参 EVENT_NAMES 与函数体内的 const 同名会直接抛
+      // "Identifier 'EVENT_NAMES' has already been declared"，脚本连 handler 都注册不上。
+      window.lx = lxObj;
+      if (baseLx === null) baseLx = lxObj;
+      window.EVENT_NAMES = EVENT_NAMES;
+      window.module = undefined;
+      window.exports = undefined;
+      window.require = undefined;
+      try {
+        // 部分脚本靠 document.currentScript.textContent 读取自身头部注解，
+        // 每次载入都重定义，避免多实例时残留上一份脚本内容
+        try {
+          if (typeof document !== 'undefined') {
+            Object.defineProperty(document, 'currentScript', {
+              value: { textContent: code }, writable: true, configurable: true
+            });
+          }
+        } catch (e2) { /* 只读环境忽略 */ }
+        var runner = new Function(code + '\n//# sourceURL=lx_source_' + instId + '.js');
+        runner();
+        inst.loaded = true;
+        toNative({ type: 'loaded', inst: instId, kind: 'lx', name: inst.name, version: inst.version, updateUrl: inst.updateUrl });
+      } catch (e) {
+        var firstError = String(e && e.message ? e.message : e);
+        // 洛雪装载在语法阶段就崩了、而正文更像 MusicFree 插件时，自动按 CommonJS
+        // 再试一次。覆盖「ArkTS 侧识别偏保守」「社区插件用 ESM / exports.default」
+        // 两类情况，避免用户看到一个无从下手的 Unexpected token。
+        if (detectKind(code) === 'musicfree') {
+          try {
+            inst.kind = 'musicfree';
+            loadMusicFree(instId, code, inst);
+            log(instId, '[MF] 洛雪装载失败，已自动按 MusicFree 协议装载');
+            return;
+          } catch (e2) {
+            toNative({ type: 'error', inst: instId,
+              error: '脚本未能载入（已尝试洛雪 / MusicFree）：' + firstError +
+                '；' + String(e2 && e2.message ? e2.message : e2) });
+            return;
+          }
+        }
+        inst.error = firstError;
+        var looksJson = /^\s*[\[{]/.test(code);
+        toNative({ type: 'error', inst: instId,
+          error: '音源脚本执行失败: ' + firstError +
+            (looksJson ? '（内容像 JSON 订阅清单，请用「从网络导入」粘贴订阅链接）' : '') });
+      }
+    },
+
+    __unload: function (instId) {
+      delete instances[instId];
+    },
+
+    /**
+     * 整页重置：清空所有实例、挂起请求与全局 lx 指向。
+     *
+     * 官方移动端切源是「销毁 QuickJS 线程 → 新建」，脚本里残留的定时器、
+     * 全局变量、monkey-patch 都会随之消失。单页多实例做不到这一点，
+     * 于是有了这个「按需重建」入口：某个源被判定为卡死 / 串源时，
+     * 先整页重置再重新注入，等价于重启一次音源沙箱（不用重启 App）。
+     */
+    __reset: function () {
+      for (var id in httpPending) {
+        try { httpPending[id].reject(new Error('音源沙箱已重置')); } catch (e) { /* 忽略 */ }
+      }
+      httpPending = {};
+      instances = {};
+      lxCallCount = 0;
+      baseLx = null;
+      window.lx = null;
+      window.EVENT_NAMES = EVENT_NAMES;
+      return true;
+    },
+
+    // 多实例共用 window.lx：脚本顶层解构时拿到的是自己那份，
+    // 但异步回调里读 globalThis.lx 会拿到「最后加载的实例」。
+    // 由 ArkTS 侧在用户切换/初始化首选后调用，把全局指向固定到首选实例。
+    __setActive: function (instId) {
+      var inst = instances[instId];
+      if (!inst) return false;
+      baseLx = inst.lx || createLx(instId);
+      window.lx = baseLx;
+      return true;
+    },
+
+    /**
+     * 调用脚本的 request 处理器。
+     * 两个与官方对齐的点：
+     *  1) on(EVENT_NAMES.request) 允许注册多个 handler（聚合包会注册一串子音源
+     *     处理器并自己调度），旧实现只跑 handlers[0]，后面的全被丢掉；
+     *  2) 调用期间把 globalThis.lx 切到本实例，避免并发补位时串源。
+     */
+    __emit: function (instId, action, id, argsJson) {
+      var inst = instances[instId];
+      if (!inst) {
+        toNative({ type: 'result', inst: instId, id: id, ok: false, error: '音源未加载' });
+        return;
+      }
+      var handlers = inst.handlers[EVENT_NAMES.request] || [];
+      if (!handlers.length) {
+        toNative({ type: 'result', inst: instId, id: id, ok: false, error: '音源未注册 request 处理器' });
+        return;
+      }
+      var args;
+      try { args = JSON.parse(argsJson); } catch (e) {
+        toNative({ type: 'result', inst: instId, id: id, ok: false, error: '参数解析失败' });
+        return;
+      }
+
+      var ownLx = inst.lx || createLx(instId);
+      window.lx = ownLx;
+      lxCallCount++;
+      var restored = false;
+      var restoreLx = function () {
+        if (restored) return;
+        restored = true;
+        lxCallCount--;
+        if (lxCallCount <= 0) {
+          lxCallCount = 0;
+          window.lx = baseLx || ownLx;
+        }
+      };
+
+      var tasks = [];
+      for (var i = 0; i < handlers.length; i++) {
+        try {
+          var one = handlers[i](args);
+          if (one !== undefined && one !== null) tasks.push(Promise.resolve(one));
+        } catch (e) {
+          tasks.push(Promise.reject(e));
+        }
+      }
+      if (tasks.length === 0) {
+        restoreLx();
+        toNative({ type: 'result', inst: instId, id: id, ok: false, error: '音源未处理该请求' });
+        return;
+      }
+
+      // 谁先给出有效结果就用谁；返回空对象（表示「我处理不了」）的不算数，
+      // 继续等其它 handler。全部失败时抛第一条错误，不再只报 handlers[0]。
+      var left = tasks.length;
+      var settled = false;
+      var firstError = '';
+      var finish = function (ok, value) {
+        if (settled) return;
+        settled = true;
+        restoreLx();
+        if (ok) {
+          toNative({ type: 'result', inst: instId, id: id, ok: true, dataText: value });
+        } else {
+          toNative({ type: 'result', inst: instId, id: id, ok: false, error: value || '音源请求失败' });
+        }
+      };
+      for (var j = 0; j < tasks.length; j++) {
+        (function (task) {
+          task.then(function (result) {
+            var text = '{}';
+            try { text = JSON.stringify(result === undefined ? {} : result); } catch (e) { text = '{}'; }
+            if (text === '{}' || text === 'null') {
+              left--;
+              if (left === 0) finish(false, firstError || '音源未返回有效链接');
+              return;
+            }
+            finish(true, text);
+          }, function (err) {
+            if (firstError === '') firstError = String(err && err.message ? err.message : err);
+            left--;
+            if (left === 0) finish(false, firstError || '音源请求失败');
+          });
+        })(tasks[j]);
+      }
+    },
+
+    __httpResolve: function (instId, id, payloadJson) {
+      var entry = httpPending[id];
+      if (!entry) return;
+      delete httpPending[id];
+      var payload;
+      try { payload = JSON.parse(payloadJson); } catch (e) { entry.reject(e); return; }
+      if (payload.ok) {
+        var hdrs = payload.headers || {};
+        var bodyVal;
+        if (payload.binary) {
+          try { bodyVal = base64ToBytes(String(payload.data || '')); }
+          catch (e2) { bodyVal = new Uint8Array(0); }
+        } else {
+          bodyVal = makeBody(payload.data, hdrs);
+        }
+        entry.resolve({
+          statusCode: payload.status,
+          body: bodyVal,
+          headers: hdrs,
+          // 原始文本另给一份：部分音源用 resp.rawBody / resp.text 自己解析
+          rawBody: typeof payload.data === 'string' ? payload.data : String(payload.data === undefined ? '' : payload.data)
+        });
+      } else {
+        entry.reject(new Error(payload.error || 'network error'));
+      }
+    },
+
+    __isLoaded: function (instId) {
+      return !!(instances[instId] && instances[instId].loaded);
+    },
+
+    __instances: function () {
+      var out = {};
+      for (var k in instances) {
+        out[k] = { name: instances[k].name, loaded: !!instances[k].loaded, error: instances[k].error };
+      }
+      return out;
+    }
+  };
+
+  for (var k in host) {
+    window[k] = host[k];
+  }
+  // 兼容脚本里直接读 window.__lx / globalThis.__lx 的写法
+  window.__lx = host;
+
+  toNative({ type: 'ready' });
+})();
+</script>
+</body>
+</html>

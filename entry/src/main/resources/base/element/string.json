@@ -1,0 +1,28 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "音栈 · 鸿蒙原生音乐应用"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "音栈主界面"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "音栈"
+    },
+    {
+      "name": "PlayerCard_label",
+      "value": "音栈 · 正在播放"
+    },
+    {
+      "name": "PlayerCard_desc",
+      "value": "在桌面查看最近播放的歌曲"
+    },
+    {
+      "name": "PlayerCardAbility_desc",
+      "value": "音栈服务卡片"
+    }
+  ]
+}

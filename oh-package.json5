@@ -1,0 +1,11 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "yinzhan",
+  "version": "1.0.0",
+  "description": "HarmonyOS native music player with LX Music custom source support",
+  "main": "",
+  "author": "",
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "devDependencies": {}
+}

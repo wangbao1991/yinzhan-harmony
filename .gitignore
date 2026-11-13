@@ -1,0 +1,28 @@
+# 构建产物
+build/
+**/build/
+oh_modules/
+**/oh_modules/
+node_modules/
+
+# 签名材料与应用二进制包（绝不入库）
+signing/
+*.hap
+*.p12
+*.pem
+*.p7b
+*.cer
+*.jks
+*.keystore
+
+# 本地 / 内部记录（不公开）
+AGENTS.md
+archive/
+00-交付物/
+*.log
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
