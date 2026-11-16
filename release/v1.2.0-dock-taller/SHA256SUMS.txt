@@ -1,0 +1,3 @@
+6700cc5a077de6ed7795cda6044e0c54e2fe3a082d8e66e13ad1a6f8bc6824a0  音栈-v1.2.0-底栏加宽-源码工程.zip
+9620fddc9838ffd731462b36fb77128afc526df5ee6d6cdd8ff345db2bb7529d  音栈-v1.2.0-底栏加宽-signed.hap
+f3c97a9ad9f35b460f98058a8729c34497dcee3cf0a80e415e0d99a0446b6ad1  音栈-v1.2.0-底栏加宽-unsigned.hap
