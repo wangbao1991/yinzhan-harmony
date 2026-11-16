@@ -2,7 +2,9 @@
 
 用 ArkTS / ArkUI 从零编写的 HarmonyOS / OpenHarmony 原生音乐播放器。Stage 模型、API 26（OpenHarmony 7.0）、零三方依赖、可离线命令行构建。
 
-当前版本：**v1.0**（`versionName 1.0` / `versionCode 67`）
+根目录源码版本：**v1.0**（`versionName 1.0` / `versionCode 67`）
+
+最新交付快照：**v1.2.0**（`versionName 1.2.0` / `versionCode 87`），见 [`release/v1.2.0-dock-taller`](release/v1.2.0-dock-taller)。
 
 ## 这是什么
 
@@ -43,6 +45,19 @@ scripts/                   构建、签名、自检、图标工具
 docs/                      编译环境重建指南、音源协议分析
 hvigor/                    构建配置
 ```
+
+## 发布快照
+
+`release/` 下按版本存放可直接取用的构建产物（源码工程 zip + HAP + 校验值），根目录源码保持不变：
+
+| 目录 | 版本 | 内容 |
+| --- | --- | --- |
+| [`release/v1.2.0-dock-taller`](release/v1.2.0-dock-taller) | `87 / 1.2.0` | 底栏重构基线，迷你播放条与页签栏加宽至 52vp；含**已签名 HAP**（可直接侧载）与 unsigned |
+| [`release/v1.0-batch-download-perf`](release/v1.0-batch-download-perf) | `67 / 1.0` | 批量下载性能返工后快照 |
+| [`release/v1.0-cleanup10`](release/v1.0-cleanup10) | `67 / 1.0` | 代码审计清理 10 组废弃代码后快照 |
+| [`release/v1.0-source-capability`](release/v1.0-source-capability) | `67 / 1.0` | 音源能力分派版本快照 |
+
+各目录内 `SHA256SUMS.txt` 为对应二进制的校验值；签名材料不随仓库分发，正式分发请用自有 AGC 证书对 unsigned 包重签。
 
 ## 第三方组件
 
