@@ -47,7 +47,6 @@ export struct SearchPage {
   @State failedSources: string[] = [];
   @State faultExpanded: boolean = false;
   /** v2.54：idle 页那条说明太长，默认只露第一句，要看细节再展开 */
-  @State idleTipOpen: boolean = false;
   @State songs: SongInfo[] = [];
   /** v2.25 同款合并：每个「歌名+歌手」键下的全部平台版本 */
   @State versionMap: Array<[string, SongInfo[]]> = [];
@@ -402,8 +401,8 @@ export struct SearchPage {
         if (this.songs.length === 0) {
           // v2.54：三段式 —— 发生了什么 / 影响什么 / 下一步做什么
           this.message = this.source === 'all'
-            ? '五大平台和已启用的插件都没搜到。换个关键词，或换个源再试。'
-            : '这个源没搜到。切到「综合」可以同时问所有源。';
+            ? '五大平台和已启用的插件都没搜到'
+            : '这个源没搜到';
         }
       } else if (this.type === 1) {
         const mfIds = this.activeMfSources();
@@ -437,8 +436,8 @@ export struct SearchPage {
         this.finished = true;
         if (list.length === 0) {
           this.message = mfIds.length > 0 && platforms.length === 0
-            ? '这个插件没有提供歌单搜索。切到平台源或「综合」再试。'
-            : '平台源和已启用的插件都没返回歌单。换个关键词再试。';
+            ? '这个插件没有提供歌单搜索'
+            : '平台源和已启用的插件都没返回歌单';
         }
       } else {
         const mfIds = this.activeMfSources();
@@ -478,13 +477,13 @@ export struct SearchPage {
         this.finished = true;
         if (list.length === 0) {
           this.message = mfIds.length > 0 && platforms.length === 0
-            ? '这个插件没有提供歌手搜索。切到平台源或「综合」再试。'
-            : '平台源和已启用的插件都没返回歌手。换个关键词再试。';
+            ? '这个插件没有提供歌手搜索'
+            : '平台源和已启用的插件都没返回歌手';
         }
       }
     } catch (e) {
       if (token === this.seq) {
-        this.message = '这次请求没成功，可能是网络不通。检查网络后点「重新搜索」。';
+        this.message = '这次请求没成功，可能是网络不通';
       }
     }
     if (token === this.seq) {
@@ -816,47 +815,6 @@ export struct SearchPage {
         }
         .width('100%')
 
-        // v2.54：这段说明原来一整块摊在空态页上，把「搜索历史 / 大家都在搜」压到看不见。
-        // 默认只留第一句（怎么选源），要了解取链与替补细节再展开。
-        Column({ space: 8 }) {
-          Row({ space: 6 }) {
-            Text('小提示')
-              .fontSize(FONT.caption)
-              .fontColor(this.p().text3)
-              .layoutWeight(1)
-            Text(this.idleTipOpen ? '收起' : '展开')
-              .fontSize(FONT.micro)
-              .fontColor(this.p().text3)
-          }
-          .width('100%')
-          .onClick(() => {
-            this.idleTipOpen = !this.idleTipOpen;
-          })
-
-          Text('「综合」会搜五大平台，也会搜已导入且支持搜索的 MusicFree 音源（带 MF 角标）；' +
-            '点某个源就只搜那一家。')
-            .fontSize(FONT.caption)
-            .fontColor(this.p().text3)
-            .lineHeight(19)
-            .width('100%')
-
-          if (this.idleTipOpen) {
-            Text('歌单 / 歌手由平台源和 MusicFree 插件共同提供，插件没实现该类型时该源不返回结果。' +
-              '平台搜索的播放地址由洛雪音源提供，音源里没有的歌会自动换平台找同款，' +
-              '实在找不到会明确告诉你。')
-              .fontSize(FONT.caption)
-              .fontColor(this.p().text3)
-              .lineHeight(19)
-              .width('100%')
-          }
-        }
-        .width('100%')
-        .padding(14)
-        .borderRadius(RADIUS.md)
-        .backgroundColor(glassCardBase(this.isDark))
-        .linearGradient({ angle: 180, colors: glassSurface(this.isDark, this.lightLevel) })
-        .border({ width: glassEdgeWidth(this.lightLevel), color: glassEdgeColor(this.isDark, this.lightLevel) })
-        .shadow(glassShadow(this.isDark, this.lightLevel))
       }
       .width('100%')
       .padding({ top: 12, bottom: FLOAT_SPACE + 20 })
@@ -1175,7 +1133,7 @@ export struct SearchPage {
         EmptyView({
           icon: $r('sys.symbol.magnifyingglass'),
           title: '没有找到结果',
-          hint: this.message.length > 0 ? this.message : '换个关键词，或换个源再试。',
+          hint: this.message,
           action: '重新搜索',
           onAction: () => {
             this.search(true);

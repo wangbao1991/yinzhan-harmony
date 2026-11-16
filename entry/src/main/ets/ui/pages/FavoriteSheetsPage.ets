@@ -19,7 +19,6 @@ import { EmptyView, GlassSheetCard, SelectionBar, ImmersiveBar } from '../Common
  * 详情页点「收藏 / 取消收藏」、本页退回收藏、别处移除，走的都是同一个广播，
  * 于是首页计数、发现页/搜索页卡片角标、详情页按钮、本页列表四处同时刷新。
  *
- * 视觉沿用发现页推荐歌单的 GlassSheetCard（青绿液态玻璃卡座）。
  * v2.62：顶部原来那张「歌单收藏 / N 个歌单」说明卡与标题栏信息重复、白占一屏，
  * 已整体移除；计数交给 ImmersiveBar 的 subtitle，进多选统一靠长按卡片。
  * 卡片传 titleLines: 2 固定标题区高度，避免一行 / 两行标题把同排卡片撑得一高一矮。
@@ -277,7 +276,7 @@ export struct FavoriteSheetsPage {
     }
     AlertDialog.show({
       title: '取消收藏 ' + picked.length.toString() + ' 个歌单',
-      message: '将从歌单收藏里移除 ' + names + '，只影响收藏列表，不会删除歌单本身或歌曲文件。',
+      message: '将从歌单收藏里移除 ' + names,
       autoCancel: true,
       alignment: DialogAlignment.Center,
       primaryButton: {
@@ -314,12 +313,6 @@ export struct FavoriteSheetsPage {
         .fontWeight(FontWeight.Bold)
         .fontColor(this.p().text)
         .width('100%')
-      Text('粘贴网易云 / QQ音乐 / 酷我 / 酷狗 / 咪咕的歌单或专辑链接，也可以只填歌单 ID。导入后会加入「歌单收藏」并打开，之后随时能找回来。\n汽水音乐等平台暂不支持：官方没有匿名可用的公开歌单接口，取歌单需要扫码登录与签名，匿名只能拿到试听片段，与本应用的无损取链不兼容。')
-        .fontSize(FONT.caption)
-        .fontColor(this.p().text2)
-        .lineHeight(18)
-        .width('100%')
-
       TextInput({ text: this.importName, placeholder: '名称（可选，留空自动生成）' })
         .fontSize(FONT.body)
         .fontColor(this.p().text)
@@ -344,10 +337,6 @@ export struct FavoriteSheetsPage {
           this.importText = value;
         })
 
-      Text('链接里自带平台时以链接为准；只填 ID 时按这里选：')
-        .fontSize(FONT.micro)
-        .fontColor(this.p().text3)
-        .width('100%')
       Row({ space: 6 }) {
         ForEach(IMPORT_PLATFORM_IDS, (id: string) => {
           Button(platformShort(id))
@@ -432,7 +421,6 @@ export struct FavoriteSheetsPage {
             EmptyView({
               icon: $r('sys.symbol.heart'),
               title: '还没有收藏的歌单',
-              hint: '在歌单详情页点「收藏」，这里就能随时找回来',
               action: '',
               onAction: (): void => {
               }

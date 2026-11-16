@@ -47,6 +47,21 @@ interface FlacParsed {
   audioOffset: number;
 }
 
+/**
+ * 第一跳只读这么点来探测标签结构（ID3 头 10B / fLaC + metadata block 头）。
+ * 64KB 落在普通堆里，不是大对象，分配几乎不触发 GC —— 这是「全局顿挫」根治的关键：
+ * 旧版每首完成连分配 3 份几十 MB，方舟 GC 回收大对象是全局 STW。
+ */
+const PROBE_HEAD: number = 64 * 1024;
+/**
+ * 标签区读取硬上限：带大封面的 ID3/FLAC 标签区可能超过 PROBE_HEAD，
+ * 按 headEnd() 算出的精确长度二跳读取，最多到 4MB；再超就放弃内嵌
+ * （标签失败不影响下载结果，见 CE 约束），绝不为写标签分配几十 MB 大对象。
+ */
+const MAX_HEAD: number = 4 * 1024 * 1024;
+/** 流式搬音频的分块大小：整条链路只分配这一个 256KB 缓冲并反复复用 */
+const CHUNK: number = 256 * 1024;
+
 export class AudioTag {
   private static encoder = util.TextEncoder.create('utf-8');
 
@@ -55,7 +70,7 @@ export class AudioTag {
    * 返回是否真的把字节写进了文件（mp3 / flac 为 true）。
    * 不再生成外挂 .lrc；顺手清掉旧版本可能遗留的同名 .lrc，保证下载目录只有一个文件。
    */
-  static embed(path: string, format: string, song: SongInfo, lyricLrc: string): boolean {
+  static async embed(path: string, format: string, song: SongInfo, lyricLrc: string): Promise<boolean> {
     const meta: TagMeta = {
       title: song.name,
       artist: song.singer,
@@ -63,10 +78,10 @@ export class AudioTag {
     };
     AudioTag.removeSidecarLrc(path);
     if (format === 'mp3') {
-      return AudioTag.writeMp3(path, meta, lyricLrc);
+      return await AudioTag.writeMp3(path, meta, lyricLrc);
     }
     if (format === 'flac') {
-      return AudioTag.writeFlac(path, meta, lyricLrc);
+      return await AudioTag.writeFlac(path, meta, lyricLrc);
     }
     // m4a / ogg / wav / unknown：容器结构复杂，不动音频字节也不带歌词，仍是单文件
     return false;
@@ -122,44 +137,132 @@ export class AudioTag {
       (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> 0;
   }
 
-  private static readAll(path: string): Uint8Array {
+  /**
+   * 只读「标签区」（第五次性能返工 · 全局顿挫根治）。
+   *
+   * 前四版一直没碰的真根因：readAll 把整个无损文件（几十 MB）读进一份
+   * ArrayBuffer，concat 再分配第二份同样大的 Uint8Array 并整文件 set 拷贝，
+   * toBuffer 又分配第三份 ArrayBuffer —— 一首完成瞬间在主线程连分配 3 份
+   * 几十 MB 大对象，并发 3 首就是 9 份。方舟 GC 对这种大对象的回收是
+   * **全局 STW**，跟当前在哪个页面无关 —— 这正是用户说的「卡顿影响是全局的、
+   * 在其他界面也能感觉到顿挫」。
+   *
+   * 而 ID3v2 / FLAC metadata 全都位于文件头部，音频主体根本不需要进 JS 内存。
+   * 两跳读取：第一跳 64KB 探测标签结构，算出标签区精确长度；只有带大封面、
+   * 标签区超过 64KB 时才按精确长度二跳读取（上限 4MB）。常态一首歌只分配
+   * 64KB，大对象分配直接归零。
+   */
+  private static async readHead(path: string): Promise<Uint8Array> {
     const stat = fs.statSync(path);
-    const size = stat.size;
-    const buf = new ArrayBuffer(size);
+    const probeLen = Math.min(stat.size, PROBE_HEAD);
+    const buf = new ArrayBuffer(probeLen);
     const fd = fs.openSync(path, fs.OpenMode.READ_ONLY);
     try {
-      fs.readSync(fd.fd, buf, { length: size });
+      await fs.read(fd.fd, buf, { length: probeLen });
+      const probe = new Uint8Array(buf);
+      const need = AudioTag.headEnd(probe, stat.size);
+      if (need <= probeLen) {
+        return probe; // 无标签 / 标签区已在探测范围内：零额外分配
+      }
+      const exact = new ArrayBuffer(need);
+      await fs.read(fd.fd, exact, { offset: 0, length: need });
+      return new Uint8Array(exact);
     } finally {
       fs.closeSync(fd);
     }
-    return new Uint8Array(buf);
   }
 
   /**
-   * 整体重写。失败时把读进内存的原始字节写回去，保证不会留下半截 / 空文件。
-   * 这里不用「临时文件 + rename」：公共 Download 目录里 rename 覆盖语义不统一，
-   * 原地 TRUNC + 内存回滚更可控。
+   * 从探测到的头部算出「标签区结束位置」，也就是音频主体起点。
+   * 读不满这个长度就没法正确解析 / 重写，所以 readHead 会据此二跳精确读取。
    */
-  private static rewrite(path: string, fresh: Uint8Array, original: Uint8Array): void {
-    try {
-      const fd = fs.openSync(path,
-        fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
-      try {
-        fs.writeSync(fd.fd, AudioTag.toBuffer(fresh));
-      } finally {
-        fs.closeSync(fd);
+  private static headEnd(probe: Uint8Array, fileSize: number): number {
+    let end = AudioTag.id3End(probe);
+    if (end < 0) {
+      return Math.min(fileSize, MAX_HEAD); // ID3 头损坏或超界：按上限读满再判定
+    }
+    if (end > 0) {
+      return Math.min(end, fileSize, MAX_HEAD); // mp3：ID3 长度在头 10 字节里
+    }
+    // flac：'fLaC' 后是一串 metadata block，每块 4 字节头带 24bit 长度，last 位结束
+    if (probe.length < 4 || probe[0] !== 0x66 || probe[1] !== 0x4c ||
+      probe[2] !== 0x61 || probe[3] !== 0x43) {
+      return probe.length; // 既不是 ID3 也不是 fLaC：无标签，不二跳，音频从 0 开始
+    }
+    let offset = 4;
+    while (offset + 4 <= probe.length) {
+      const last = (probe[offset] & 0x80) !== 0;
+      const len = (probe[offset + 1] << 16) | (probe[offset + 2] << 8) | probe[offset + 3];
+      offset += 4 + len;
+      if (last) {
+        return Math.min(offset, fileSize, MAX_HEAD);
       }
+    }
+    // block 链还没走完（标签区超过探测长度）：按上限二跳读满，让 parseFlac 校验
+    return Math.min(fileSize, MAX_HEAD);
+  }
+
+  /**
+   * 流式重写（第五次性能返工）：新标签头 + 原音频主体 → 临时文件 → 覆盖回原文件。
+   *
+   * 全程只分配一个 CHUNK(256KB) 缓冲并复用：每块 await 系统线程池读写，
+   * 逐块让出事件循环，UI 线程零阻塞、零大对象、零 GC 风暴。
+   * 音频字节不经过 JS 堆，比旧版「整读 → 内存重建 → 整写」少两次整文件内存拷贝。
+   *
+   * 失败回滚更强：原文件直到最后 copyFile 覆盖前始终是完好的（旧版是 TRUNC 后
+   * 再拿内存副本回滚，反而有半截窗口）；失败只需删掉临时文件即完成回滚。
+   */
+  private static async rewrite(path: string, freshHead: Uint8Array, audioOffset: number): Promise<void> {
+    const tmp = path + '.yztmp';
+    const total = fs.statSync(path).size;
+    if (audioOffset < 0 || audioOffset > total) {
+      throw new Error('标签区越界，无法内嵌');
+    }
+    try {
+      fs.unlinkSync(tmp); // 清掉上次异常残留
     } catch (e) {
-      try {
-        const back = fs.openSync(path,
-          fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
-        try {
-          fs.writeSync(back.fd, AudioTag.toBuffer(original));
-        } finally {
-          fs.closeSync(back);
+      // 不存在是常态
+    }
+    const src = fs.openSync(path, fs.OpenMode.READ_ONLY);
+    let dst: fs.File | null = null;
+    try {
+      dst = fs.openSync(tmp,
+        fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+      await fs.write(dst.fd, AudioTag.toBuffer(freshHead));
+      const chunk = new ArrayBuffer(CHUNK);
+      let pos = audioOffset;
+      while (pos < total) {
+        const want = Math.min(CHUNK, total - pos);
+        const n = await fs.read(src.fd, chunk, { offset: pos, length: want });
+        if (n <= 0) {
+          break;
         }
-      } catch (rollbackError) {
-        console.error('[AudioTag] 回滚原文件失败 ' + String(rollbackError));
+        await fs.write(dst.fd, chunk, { length: n });
+        pos += n;
+      }
+      fs.closeSync(dst);
+      dst = null;
+      fs.closeSync(src);
+      // copyFile 会覆盖同名目标并截断多余部分；唯一的覆盖动作，且是异步系统 IO
+      await fs.copyFile(tmp, path);
+      fs.unlinkSync(tmp);
+    } catch (e) {
+      if (dst !== null) {
+        try {
+          fs.closeSync(dst);
+        } catch (e2) {
+          // 关闭失败不影响回滚
+        }
+      }
+      try {
+        fs.closeSync(src);
+      } catch (e2) {
+        // 可能已关闭
+      }
+      try {
+        fs.unlinkSync(tmp);
+      } catch (e2) {
+        // 临时文件可能不存在
       }
       throw new Error('写入标签失败，已回滚原文件：' + String(e));
     }
@@ -191,20 +294,20 @@ export class AudioTag {
       (data[8] & 0x7f) * 128 + (data[9] & 0x7f);
   }
 
-  /** 去掉原有 ID3v2 标签，返回纯 MPEG 音频字节 */
-  private static stripId3(data: Uint8Array): Uint8Array {
+  /**
+   * 音频主体起点（= 旧 ID3 标签结束位置）。第五次返工起不再把音频读进内存，
+   * 只需这个偏移量给 rewrite 从原文件分块搬；标签区越界返回 -1 让上层放弃内嵌。
+   */
+  private static id3End(data: Uint8Array): number {
     const size = AudioTag.id3Size(data);
     if (size < 0) {
-      return data;
+      return 0; // 本来就没有 ID3 标签，音频从 0 开始
     }
     let end = 10 + size;
     if ((data[5] & 0x10) !== 0) {
       end += 10; // v2.4 footer
     }
-    if (end > data.length) {
-      return data; // 头损坏，宁可不改
-    }
-    return data.subarray(end);
+    return end > data.length ? -1 : end;
   }
 
   /**
@@ -306,15 +409,15 @@ export class AudioTag {
     return AudioTag.concat([header, body]);
   }
 
-  private static writeMp3(path: string, meta: TagMeta, lrc: string): boolean {
-    const original = AudioTag.readAll(path);
-    const kept = AudioTag.parseId3Frames(original);
-    const audio = AudioTag.stripId3(original);
-    if (audio.length === 0) {
+  private static async writeMp3(path: string, meta: TagMeta, lrc: string): Promise<boolean> {
+    const head = await AudioTag.readHead(path);
+    const kept = AudioTag.parseId3Frames(head);
+    const audioOffset = AudioTag.id3End(head);
+    if (audioOffset < 0) {
       return false;
     }
-    const fresh = AudioTag.concat([AudioTag.id3Tag(meta, lrc, kept), audio]);
-    AudioTag.rewrite(path, fresh, original);
+    const freshHead = AudioTag.id3Tag(meta, lrc, kept);
+    await AudioTag.rewrite(path, freshHead, audioOffset);
     return true;
   }
 
@@ -328,6 +431,7 @@ export class AudioTag {
     }
     const blocks: FlacBlock[] = [];
     let offset = 4;
+    let foundLast = false;
     while (offset + 4 <= data.length) {
       const head = data[offset];
       const type = head & 0x7f;
@@ -342,10 +446,13 @@ export class AudioTag {
       blocks.push(block);
       offset = end;
       if (last) {
+        foundLast = true;
         break;
       }
     }
-    if (blocks.length === 0) {
+    // 只读标签区头部：若 last 块没读完（标签区超过 MAX_HEAD），offset 就不是音频起点，
+    // 继续写会把音频主体截断 —— 宁可整首放弃内嵌，也不能损坏文件。
+    if (blocks.length === 0 || !foundLast) {
       return null;
     }
     const parsed: FlacParsed = { blocks: blocks, audioOffset: offset };
@@ -429,9 +536,9 @@ export class AudioTag {
     return AudioTag.concat(parts);
   }
 
-  private static writeFlac(path: string, meta: TagMeta, lrc: string): boolean {
-    const original = AudioTag.readAll(path);
-    const parsed = AudioTag.parseFlac(original);
+  private static async writeFlac(path: string, meta: TagMeta, lrc: string): Promise<boolean> {
+    const fileHead = await AudioTag.readHead(path);
+    const parsed = AudioTag.parseFlac(fileHead);
     if (parsed === null) {
       return false;
     }
@@ -470,9 +577,10 @@ export class AudioTag {
       head[3] = len & 0xff;
       parts.push(head, block.body);
     }
-    parts.push(original.subarray(parsed.audioOffset));
-    const fresh = AudioTag.concat(parts);
-    AudioTag.rewrite(path, fresh, original);
+    // 只生成新的 metadata 头；音频主体由 rewrite 从原文件 audioOffset 起分块搬运，
+    // 不再把几十 MB 音频拼进内存（第五次返工消灭大对象分配的关键）。
+    const freshHead = AudioTag.concat(parts);
+    await AudioTag.rewrite(path, freshHead, parsed.audioOffset);
     return true;
   }
 }

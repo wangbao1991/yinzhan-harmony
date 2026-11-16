@@ -1331,38 +1331,6 @@ export class PlatformApi {
     return [];
   }
 
-  /** 聚合搜索：并发 + 按歌名/歌手去重 + 交错排列，避免单平台刷屏 */
-  async aggregate(platforms: string[], keyword: string): Promise<SongInfo[]> {
-    const tasks: Promise<SongInfo[]>[] = [];
-    for (const platform of platforms) {
-      tasks.push(this.searchSongs(platform, keyword, 1).catch((): SongInfo[] => []));
-    }
-    const groups = await Promise.all(tasks);
-    const seen: string[] = [];
-    const merged: SongInfo[] = [];
-    let max = 0;
-    for (const group of groups) {
-      max = Math.max(max, group.length);
-    }
-    for (let i = 0; i < max; i++) {
-      for (const group of groups) {
-        if (i >= group.length) {
-          continue;
-        }
-        const song = group[i];
-        const key = normalizeText(song.name) + '|' + normalizeText(song.singer.split('/')[0]);
-        if (seen.indexOf(key) >= 0) {
-          continue;
-        }
-        seen.push(key);
-        merged.push(song);
-        if (merged.length >= 80) {
-          return merged;
-        }
-      }
-    }
-    return merged;
-  }
 
   async searchSheets(platform: string, keyword: string, page: number = 1): Promise<SheetInfo[]> {
     if (platform === 'wy') {

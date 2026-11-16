@@ -1528,16 +1528,6 @@ export class Resolver {
     return internal;
   }
 
-  /** 音源声明的音质里，有没有哪一档不低于请求档（有就值得问一次） */
-  private static canTop(item: SourceItem, quality: string): boolean {
-    const floor = qualityRank(quality);
-    for (const q of item.qualities) {
-      if (qualityRank(q) >= floor) {
-        return true;
-      }
-    }
-    return false;
-  }
 
   /** 首选独占窗口：超时返回 null，但不取消原任务，后面还会一起参与竞速 */
   private static withDeadline(task: Promise<ResolveResult | null>, ms: number): Promise<ResolveResult | null> {

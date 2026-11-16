@@ -5,7 +5,8 @@ import {
   palette, Palette, RADIUS, FONT, PAGE_PAD, PAGE_BOTTOM, MINI_BAR_SPACE,
   glassCardBase, glassSurface, glassEdgeWidth, glassEdgeColor, glassShadow
 } from '../../common/Constants';
-import { SourceItem } from '../../common/Models';
+import { SourceItem, SongInfo, SheetInfo, SheetTag, LxInvokeInfo,
+  MfMeta, MfVarDef, MfProbeResult } from '../../common/Models';
 import { platformShort } from '../../common/Platform';
 import { App } from '../../core/App';
 import { Settings } from '../../core/Settings';
@@ -25,9 +26,6 @@ const AUTO_TICK_MS: number = 16;
 /**
  * 左滑区的一枚「信号琥珀」圆钮（v2.52 墨栈：中性实底 + 墨字）。
  *
- * 主体是青绿→蓝的 135° 斜向渐变，上面再叠一层纵向白渐变做「上沿弧光、
- * 中段通透、下沿宽反光」——和 Constants.glassSurface 同一套语言，只是收进
- * 一颗圆里。外圈半透明亮边 + 青蓝外投影，白图标居中，下方一行小字标功能。
  * 独立 @Component：@Prop 单向同步，主题/状态变化时按钮跟着重绘，不会像
  * 带参 @Builder 那样按值传参只生效一次。
  */
@@ -42,8 +40,6 @@ struct SourceSwipeButton {
 
   /**
    * v2.52：图标统一用墨色（onSignal），压在琥珀信号实底上。
-   * v2.18 再淡一档：不透明度由 ~0.75/0.8 降到 ~0.41/0.46，色相往圆钮的
-   * 青绿主色靠，图标轻得像从玻璃里透出来，不再和上沿弧光抢对比度。
    * 四枚共用这一个方法，深浅色都跟随全局，保持完全一致。
    */
   private iconColor(): string {
@@ -288,6 +284,20 @@ export struct SourcesPage {
   @State netMode: boolean = false;
   @State netUrl: string = '';
   @State netBusy: boolean = false;
+  /** 插件配置与能力试跑：sheet 里的第四个形态，只在 MusicFree 源上出现 */
+  @State cfgMode: boolean = false;
+  @State cfgName: string = '';
+  @State cfgCaps: string[] = [];
+  @State cfgDefs: MfVarDef[] = [];
+  @State cfgValues: string[] = [];
+  @State cfgAction: string = 'importSheet';
+  @State cfgInput: string = '';
+  @State cfgBusy: boolean = false;
+  @State cfgHint: string = '';
+  @State cfgSongs: SongInfo[] = [];
+  @State cfgSheets: SheetInfo[] = [];
+  @State cfgTags: SheetTag[] = [];
+  @State cfgHasVars: boolean = false;
   /** 导出 / 删除：多选模式（v2.48 起同时承担批量删除） */
   @State selectMode: boolean = false;
   @State selected: string[] = [];
@@ -603,7 +613,7 @@ export struct SourcesPage {
           // 但脚本要落盘到应用沙箱，读不出来。这里把原因说清楚，
           // 而不是统一报「导入失败」。
           const detail = e instanceof Error ? e.message : String(e);
-          lastError = '「' + name + '」读取失败（' + detail + '），如果它在云盘请先下载到本机';
+          lastError = '「' + name + '」读取失败（' + detail + '）';
         }
       }
       this.refresh();
@@ -646,7 +656,7 @@ export struct SourcesPage {
         const code = await SourceRepo.httpText(url);
         // 网页 / HTML 中转页（失效源）：只提示一次，别整段丢给音源沙箱执行
         if (SourceRepo.looksLikeWebPage(code)) {
-          lastError = '链接返回的是网页或跳转页（该源可能已失效），请用脚本文件的 raw 直链';
+          lastError = '链接返回的是网页或跳转页（该源可能已失效）';
           continue;
         }
         // MusicFree 订阅清单（plugins.json）：本身是 JSON，不是可执行脚本。
@@ -671,7 +681,7 @@ export struct SourcesPage {
           }
           ok += subOk;
           if (ok === 0 && expired > 0) {
-            lastError = '订阅里的插件链接均已失效（返回网页），请换一个订阅源';
+            lastError = '订阅里的插件链接均已失效（返回网页）';
           }
           continue;
         }
@@ -728,26 +738,19 @@ export struct SourcesPage {
     return tail.length > 0 ? tail : '网络音源.js';
   }
 
-  /** 卡片底部说明行：正常卡片沿用脚本描述，报错 / 无描述时给真实可操作提示 */
+  /** 卡片底部行：只在失败时给出真实原因，正常卡片不再挂说明文案 */
   private cardHint(item: SourceItem): string {
     if (item.status === 'error') {
-      return '点名字可刷新 / 重新导入 / 删除；MusicFree 订阅请用「从网络导入」粘贴订阅链接';
+      return item.message.length > 0 ? item.message : '加载失败';
     }
     if (item.health === 'error') {
       // v2.46：自检把真实结论写进 message（例如「取链失败：插件取链异常…」），
       // 优先如实展示，不再用一句笼统的「可能是网络 / 版权限制」盖掉具体原因。
-      const reason = item.message.length > 0
+      return item.message.length > 0
         ? (item.message.length > 60 ? item.message.substring(0, 60) + '…' : item.message)
         : '本次自检未通过';
-      return reason + '；脚本已就绪，仍会被搜索问到，可点「自检」重试';
     }
-    if (item.description.length > 0) {
-      return item.description;
-    }
-    if (item.kind === 'musicfree') {
-      return 'MusicFree 插件 · 提供单曲搜索与播放地址';
-    }
-    return '洛雪音源脚本 · 提供播放地址与歌词';
+    return '';
   }
 
   /**
@@ -842,6 +845,13 @@ export struct SourcesPage {
    * v2.55：顺序本身由 App.consumeBack 统一定义，本页只声明「有这一层」。
    */
   private localBack(): boolean {
+    // 配置 / 重命名 / 网络导入这几个 sheet 子形态，返回先退回菜单列表
+    if (this.cfgMode || this.renameMode || this.netMode) {
+      this.cfgMode = false;
+      this.renameMode = false;
+      this.netMode = false;
+      return true;
+    }
     if (!this.selectMode) {
       return false;
     }
@@ -1179,19 +1189,169 @@ export struct SourcesPage {
     }, 260);
   }
 
+  /** 该 id 是不是已导入的 MusicFree 插件 */
+  private isMusicFree(id: string): boolean {
+    const item = this.repo.find(id);
+    return item !== null && item.kind === 'musicfree';
+  }
+
   private openMenu(item: SourceItem): void {
     this.menuTarget = item.id;
     this.menuTapAt = Date.now();
-    // sheet 是三种形态复用同一个开关，进来必须先把另外两种清掉
+    // sheet 是四种形态复用同一个开关，进来必须先把另外三种清掉
     this.netMode = false;
     this.netUrl = '';
     this.renameMode = false;
     this.renameName = item.name;
+    this.cfgMode = false;
     this.menuShow = true;
   }
 
-  private targetItem(): SourceItem | null {
-    return this.repo.find(this.menuTarget);
+  /**
+   * 打开插件配置与能力试跑。能力清单与变量定义都来自插件「实际导出」，
+   * 没装载过就是空声明 —— 面板如实显示，绝不伪造能力或假输入框。
+   */
+  private openConfig(id: string): void {
+    const item = this.repo.find(id);
+    if (item === null || item.kind !== 'musicfree') {
+      App.get().toast('只有 MusicFree 插件需要配置');
+      return;
+    }
+    const meta: MfMeta = this.repo.mfMetaOf(id);
+    this.cfgName = item.name;
+    this.cfgCaps = meta.capabilities.slice();
+    this.cfgDefs = meta.variableDefs.slice();
+    this.cfgHasVars = meta.variableDefs.length > 0;
+    const values: string[] = [];
+    let stored: Record<string, string> = {};
+    try {
+      const parsed = JSON.parse(this.repo.mfUserVars(id)) as Record<string, string>;
+      if (parsed !== null && typeof parsed === 'object') {
+        stored = parsed;
+      }
+    } catch (e) {
+      stored = {};
+    }
+    for (const def of this.cfgDefs) {
+      const v = stored[def.key];
+      values.push(typeof v === 'string' ? v : '');
+    }
+    this.cfgValues = values;
+    this.cfgAction = meta.capabilities.indexOf('importSheet') >= 0 ? 'importSheet' :
+      (meta.capabilities.length > 0 ? meta.capabilities[0] : '');
+    this.cfgInput = '';
+    this.cfgBusy = false;
+    this.cfgHint = '';
+    this.cfgSongs = [];
+    this.cfgSheets = [];
+    this.cfgTags = [];
+    this.netMode = false;
+    this.renameMode = false;
+    this.cfgMode = true;
+    this.menuShow = true;
+  }
+
+  /** 能力名 → 中文短标签（只用于音源页展示，不参与协议） */
+  private capLabel(action: string): string {
+    const map: Record<string, string> = {
+      'musicSearch': '搜歌曲', 'sheetSearch': '搜歌单', 'artistSearch': '搜歌手', 'albumSearch': '搜专辑',
+      'lyric': '歌词', 'sheetInfo': '歌单详情', 'artistWorks': '歌手作品',
+      'albumInfo': '专辑详情', 'topLists': '榜单列表', 'topListDetail': '榜单歌曲',
+      'recommendTags': '推荐标签', 'recommendSheets': '推荐歌单',
+      'musicInfo': '单曲信息', 'importSheet': '导入歌单'
+    };
+    const label = map[action];
+    return label === undefined ? action : label;
+  }
+
+  /** 该能力是否需要输入（榜单列表 / 推荐标签无参数） */
+  private capNeedsInput(action: string): boolean {
+    return action !== 'topLists' && action !== 'recommendTags';
+  }
+
+  /** 变量编辑：按 index 写回并触发重绘（ArkTS 数组必须整体替换） */
+  private setCfgValue(index: number, value: string): void {
+    const next = this.cfgValues.slice();
+    next[index] = value;
+    this.cfgValues = next;
+  }
+
+  /** 保存用户变量：组 JSON → 落本机 KV → 即时注入运行时 */
+  private async saveCfgVars(): Promise<void> {
+    if (this.cfgBusy) {
+      return;
+    }
+    this.cfgBusy = true;
+    const obj: Record<string, string> = {};
+    for (let i = 0; i < this.cfgDefs.length; i++) {
+      obj[this.cfgDefs[i].key] = this.cfgValues[i] ?? '';
+    }
+    let json = '';
+    try {
+      json = JSON.stringify(obj);
+    } catch (e) {
+      json = '{}';
+    }
+    const ok = await this.repo.saveMfUserVars(this.menuTarget, json);
+    this.cfgBusy = false;
+    this.cfgHint = ok ? '已保存' : '保存失败：内容不是合法配置';
+    App.get().toast(this.cfgHint);
+  }
+
+  /**
+   * 能力试跑：调用插件真实方法，结果只在本面板内展示并送进播放 / 下载。
+   * 不打开任何内容页、不写发现 / 榜单 / 专辑 / 搜索的数据源。
+   */
+  private async runCfgProbe(): Promise<void> {
+    if (this.cfgBusy || this.cfgAction.length === 0) {
+      return;
+    }
+    this.cfgBusy = true;
+    this.cfgHint = '正在调用音源…';
+    this.cfgSongs = [];
+    this.cfgSheets = [];
+    this.cfgTags = [];
+    const info: LxInvokeInfo = {
+      keyword: this.cfgInput.trim(),
+      page: 1,
+      limit: 30,
+      type: this.cfgAction === 'albumSearch' ? 'album' : 'music'
+    };
+    const r: MfProbeResult = await this.repo.probeMf(this.menuTarget, this.cfgAction, info);
+    this.cfgBusy = false;
+    this.cfgSongs = r.songs;
+    this.cfgSheets = r.sheets;
+    this.cfgTags = r.tags;
+    if (r.error.length > 0) {
+      this.cfgHint = r.error;
+    } else if (r.songs.length > 0) {
+      this.cfgHint = '拿到 ' + r.songs.length.toString() + ' 首歌，可播放或下载';
+    } else if (r.sheets.length > 0) {
+      this.cfgHint = '拿到 ' + r.sheets.length.toString() + ' 个歌单 / 榜单';
+    } else if (r.tags.length > 0) {
+      this.cfgHint = '拿到 ' + r.tags.length.toString() + ' 个标签';
+    } else {
+      this.cfgHint = '音源返回了空结果（可能是链接不被支持或缺少配置）';
+    }
+  }
+
+  /** 试跑结果 → 播放：走既有 App.play 出口，不新建队列页 */
+  private playCfgSongs(): void {
+    if (this.cfgSongs.length === 0) {
+      return;
+    }
+    App.get().playAndOpen(this.cfgSongs.slice(), 0);
+    this.menuShow = false;
+    this.cfgMode = false;
+  }
+
+  /** 试跑结果 → 下载：整批走 Downloader.enqueueAll 出口（一次落盘 / 一次广播 / 一次补位） */
+  private downloadCfgSongs(): void {
+    if (this.cfgSongs.length === 0) {
+      return;
+    }
+    const n = App.get().downloads.enqueueAll(this.cfgSongs);
+    App.get().toast('已加入下载队列 ' + n.toString() + ' 首');
   }
 
   private async checkOne(id: string): Promise<void> {
@@ -1417,11 +1577,6 @@ export struct SourcesPage {
       Text(this.items.length.toString() + ' 个')
         .fontSize(FONT.caption)
         .fontColor(this.p().text3)
-      Text('长按卡片可拖动排序')
-        .fontSize(FONT.micro)
-        .fontColor(this.p().text3)
-        .layoutWeight(1)
-        .textAlign(TextAlign.End)
     }
     .width('100%')
     .padding({ left: 6, right: 6, top: 4, bottom: 2 })
@@ -1496,10 +1651,7 @@ export struct SourcesPage {
    * v2.51 重设计：音源状态控制台（Hero）。
    *
    * 原来是一段纯文字概览卡，和 7 个开关、说明、导入条一起平铺在长列表顶部，
-   * 把音源卡顶到两三屏外。现在用一块青绿渐变「仪表芯片」做视觉焦点：
    * 左侧大号总数，右侧三行状态色点，底部一行当前首选，一屏内读懂全局。
-   * 青绿渐变沿用左滑四枚圆钮的 135° 实体 + 180° 上沿弧光光学语言，
-   * 玻璃四件套不变，深浅色 / 光感档位全部跟随全局。
    */
   @Builder
   sourceOverview() {
@@ -1784,19 +1936,12 @@ export struct SourcesPage {
               .fontWeight(FontWeight.Medium)
               .fontColor(this.p().primary)
               .width('100%')
-            Text('「已就绪」指音源已完成初始化（上报了可用平台），只有就绪的音源才会被问到；某条链接播放失败时会自动换到其它音源给的链接')
-              .fontSize(FONT.micro)
-              .fontColor(this.p().text3)
-              .lineHeight(17)
-              .width('100%')
-            Text(this.checking
-              ? ('正在自检 ' + this.checkDone.toString() + '/' + this.checkTotal.toString() +
-                '，每个源按平台逐首试，请稍候')
-              : '逐个音源按平台试基准曲，结论与卡片上的「自检」一致；这会真实取链，不要连点')
-              .fontSize(FONT.micro)
-              .fontColor(this.p().text3)
-              .lineHeight(17)
-              .width('100%')
+            if (this.checking) {
+              Text('正在自检 ' + this.checkDone.toString() + '/' + this.checkTotal.toString())
+                .fontSize(FONT.micro)
+                .fontColor(this.p().text3)
+                .width('100%')
+            }
 
             if (this.pendingCount > 0) {
               Row({ space: 8 }) {
@@ -1830,11 +1975,9 @@ export struct SourcesPage {
 
           Column() {
             this.smartHuntRow()
-            Divider().color(this.p().line).margin({ left: 16, right: 16 })
-            if (this.smartHunt) {
-              // 懒人模式走独立的 smartResolve，以下 3 项完全不参与取链，留着只会误导
-              this.smartHuntHint()
-            } else {
+            if (!this.smartHunt) {
+              // 懒人模式走独立的 smartResolve，以下 2 项完全不参与取链，直接不显示
+              Divider().color(this.p().line).margin({ left: 16, right: 16 })
               this.preferOnlyRow()
               Divider().color(this.p().line).margin({ left: 16, right: 16 })
               this.downgradeRow()
@@ -1875,12 +2018,6 @@ export struct SourcesPage {
         Text('智能达标寻源（懒人模式）')
           .fontSize(FONT.body)
           .fontColor(this.p().text)
-        Text(this.smartHunt
-          ? '锁定你选的音质：源 / 平台给不到就自动换下一个；选无损 FLAC 全挂时，会自动升到 Hi-Res / 全景声 / 母带再找一遍（绝不往下降），全试过都不行就明确提示'
-          : '关闭后回到旧取链：首选优先，拿不到时补位，仍不行才换平台找同款')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
-          .lineHeight(17)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -1897,35 +2034,6 @@ export struct SourcesPage {
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
   }
 
-  /**
-   * 懒人模式开启时，说明被隐藏的 3 项去哪了。
-   *
-   * 「只用首选音源 / 音质不足时自动降级 / 首选连续失败时自动补位」都是旧取链
-   * 链路（resolve 的非 smartHunt 分支）的配置，懒人模式下那整段不执行，留着
-   * 会让人以为调了有用。这里只做说明、不改任何值：
-   *  - preferOnly 仍作用于歌词（LyricRepo 会读），所以不能说它彻底失效；
-   *  - 关闭懒人模式后 3 项原样恢复，之前存的值不会被清空。
-   */
-  @Builder
-  smartHuntHint() {
-    Column({ space: 6 }) {
-      Text('已隐藏 3 项旧取链配置')
-        .fontSize(FONT.body)
-        .fontColor(this.p().text)
-      Text('「只用首选音源」「音质不足时自动降级」「首选连续失败时自动补位」只作用于旧取链方式；懒人模式是全源并发 + 绝不降质，这 3 项在取链时不会被读取，因此已隐藏。关闭懒人模式即可重新显示并调整，原先的设置会保留。')
-        .fontSize(FONT.micro)
-        .fontColor(this.p().text3)
-        .lineHeight(17)
-      Text('注意：「只用首选音源」仍作用于歌词，开启时歌词只问首选音源。')
-        .fontSize(FONT.micro)
-        .fontColor(this.p().text3)
-        .lineHeight(17)
-    }
-    .alignItems(HorizontalAlign.Start)
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-  }
-
   @Builder
   preferOnlyRow() {
     Row({ space: 12 }) {
@@ -1933,11 +2041,6 @@ export struct SourcesPage {
         Text('只用首选音源')
           .fontSize(FONT.body)
           .fontColor(this.p().text)
-        Text(this.preferOnly ? '首选拿不到这首歌就直接提示，绝不换成别的音源' :
-          '首选优先，拿不到时其它已启用音源会并发补位，来源可能变化')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
-          .lineHeight(17)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -1961,10 +2064,6 @@ export struct SourcesPage {
         Text('音质不足时自动降级')
           .fontSize(FONT.body)
           .fontColor(this.p().text)
-        Text('关闭时直接报错；打开后音源给不了目标音质才降到可用的最高档（实际音质会标注）')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
-          .lineHeight(17)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -1993,10 +2092,6 @@ export struct SourcesPage {
         Text('下载前严格验音质')
           .fontSize(FONT.body)
           .fontColor(this.p().text)
-        Text('默认关闭：不二次探测，落盘后验文件头；打开可挡虚标，但易被接口 403/404 误伤')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
-          .lineHeight(17)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -2021,10 +2116,6 @@ export struct SourcesPage {
         Text('首选连续失败时自动补位')
           .fontSize(FONT.body)
           .fontColor(this.p().text)
-        Text('首选连续被拒 / 超时后，临时让其它已启用音源参与，避免一个后端 403 就全部失败')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
-          .lineHeight(17)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -2049,10 +2140,6 @@ export struct SourcesPage {
         Text('记住每首歌用的音源')
           .fontSize(FONT.body)
           .fontColor(this.p().text)
-        Text('再播同一首时先问上次给过它的音源，少一轮竞速；它给不出来时其它源照常补位')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
-          .lineHeight(17)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -2077,10 +2164,6 @@ export struct SourcesPage {
         Text('启动时自动自检')
           .fontSize(FONT.body)
           .fontColor(this.p().text)
-        Text('启动约 8 秒后在后台跑一轮完整自检，不阻塞播放；结果只更新下方音源卡片的状态，不弹窗。同一进程只跑一次，距上次不足 30 分钟会跳过')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
-          .lineHeight(17)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -2165,7 +2248,6 @@ export struct SourcesPage {
   }
 
   /**
-   * 左滑露出的四枚青绿液态玻璃圆钮（参考图二），2×2 两行两列，
    * 顺序就是用户要的「自检、刷新、导出、删除」。
    *
    * 原来这里只有一个红色「删除」条、卡片右侧还挂一个 more 四宫格图标；
@@ -2453,12 +2535,14 @@ export struct SourcesPage {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
       }
-      Text(this.cardHint(item))
-        .fontSize(FONT.micro)
-        .fontColor(this.p().text3)
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
+      if (this.cardHint(item).length > 0) {
+        Text(this.cardHint(item))
+          .fontSize(FONT.micro)
+          .fontColor(this.p().text3)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
       // v2.53：selfcheck 结论带时间戳。单独一行而不是塞进状态行——
       // 状态行宽度要同时容下形状、状态文案、版本号，再挤时间必然截断，
       // 而「上次什么时候验的」恰恰是不能被省略的信息。
@@ -2610,6 +2694,213 @@ export struct SourcesPage {
     App.get().toast('播放/下载优先使用：' + item.name);
   }
 
+  /**
+   * 插件配置与能力试跑。只服务于 MusicFree 音源，全部内容都在既有 sheet 内：
+   * 能力清单只读、变量按插件声明生成输入框、试跑结果只进播放 / 下载出口。
+   * 不新增路由，不改发现 / 榜单 / 专辑 / 搜索页的数据源。
+   */
+  @Builder
+  configSheet() {
+    Column({ space: 12 }) {
+      Row({ space: 8 }) {
+        Text('配置与能力')
+          .fontSize(FONT.headline)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.p().text)
+          .layoutWeight(1)
+        Text('返回')
+          .fontSize(FONT.caption)
+          .fontColor(this.p().text2)
+          .onClick(() => {
+            this.cfgMode = false;
+          })
+      }
+      .width('100%')
+
+      Scroll() {
+        Column({ space: 14 }) {
+          Column({ space: 8 }) {
+            Text('支持的能力（' + this.cfgCaps.length.toString() + '）')
+              .fontSize(FONT.callout)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.p().text)
+              .width('100%')
+            if (this.cfgCaps.length === 0) {
+              Text('这个插件还没装载成功，或没有声明任何能力')
+                .fontSize(FONT.caption)
+                .fontColor(this.p().text3)
+                .width('100%')
+            } else {
+              Flex({ wrap: FlexWrap.Wrap }) {
+                ForEach(this.cfgCaps, (cap: string) => {
+                  Text(this.capLabel(cap))
+                    .fontSize(FONT.micro)
+                    .fontColor(this.cfgAction === cap ? '#FF191713' : this.p().text2)
+                    .backgroundColor(this.cfgAction === cap ? this.p().primary : this.p().cardAlt)
+                    .borderRadius(RADIUS.pill)
+                    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                    .margin({ right: 6, bottom: 6 })
+                    .onClick(() => {
+                      this.cfgAction = cap;
+                      this.cfgHint = '';
+                    })
+                }, (cap: string) => cap)
+              }
+              .width('100%')
+            }
+          }
+          .width('100%')
+
+          Column({ space: 8 }) {
+            Text('用户变量')
+              .fontSize(FONT.callout)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.p().text)
+              .width('100%')
+            if (!this.cfgHasVars) {
+              Text('这个插件没有声明需要填写的变量')
+                .fontSize(FONT.caption)
+                .fontColor(this.p().text3)
+                .width('100%')
+            } else {
+              ForEach(this.cfgDefs, (def: MfVarDef, idx: number) => {
+                Column({ space: 3 }) {
+                  Text(def.name)
+                    .fontSize(FONT.caption)
+                    .fontColor(this.p().text)
+                    .width('100%')
+                  TextInput({ text: this.cfgValues[idx] ?? '', placeholder: def.hint.length > 0 ? def.hint : def.key })
+                    .fontSize(FONT.caption)
+                    .fontColor(this.p().text)
+                    .placeholderColor(this.p().text3)
+                    .backgroundColor(this.p().cardAlt)
+                    .borderRadius(RADIUS.md)
+                    .height(40)
+                    .width('100%')
+                    .type(def.secret ? InputType.Password : InputType.Normal)
+                    .onChange((value: string) => {
+                      this.setCfgValue(idx, value);
+                    })
+                }
+                .width('100%')
+              }, (def: MfVarDef, idx: number) => def.key + '_' + idx.toString())
+              Button(this.cfgBusy ? '保存中…' : '保存配置')
+                .fontSize(FONT.callout)
+                .fontColor('#FF191713')
+                .backgroundColor(this.p().primary)
+                .borderRadius(RADIUS.pill)
+                .height(40)
+                .width('100%')
+                .enabled(!this.cfgBusy)
+                .onClick(() => {
+                  this.saveCfgVars();
+                })
+            }
+          }
+          .width('100%')
+
+          Column({ space: 8 }) {
+            Text('能力试跑（' + this.capLabel(this.cfgAction) + '）')
+              .fontSize(FONT.callout)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.p().text)
+              .width('100%')
+            if (this.capNeedsInput(this.cfgAction)) {
+              TextInput({ text: this.cfgInput, placeholder: this.cfgAction === 'importSheet' ?
+                '粘贴歌单分享链接或 ID' : '输入关键词 / ID' })
+                .fontSize(FONT.caption)
+                .fontColor(this.p().text)
+                .placeholderColor(this.p().text3)
+                .backgroundColor(this.p().cardAlt)
+                .borderRadius(RADIUS.md)
+                .height(40)
+                .width('100%')
+                .onChange((value: string) => {
+                  this.cfgInput = value;
+                })
+            }
+            Button(this.cfgBusy ? '调用中…' : '试跑')
+              .fontSize(FONT.callout)
+              .fontColor('#FF191713')
+              .backgroundColor(this.p().primary)
+              .borderRadius(RADIUS.pill)
+              .height(40)
+              .width('100%')
+              .enabled(!this.cfgBusy && this.cfgAction.length > 0)
+              .onClick(() => {
+                this.runCfgProbe();
+              })
+            if (this.cfgHint.length > 0) {
+              Text(this.cfgHint)
+                .fontSize(FONT.caption)
+                .fontColor(this.p().text2)
+                .width('100%')
+            }
+            // 结果只在这里展示，不打开任何内容页
+            if (this.cfgSongs.length > 0) {
+              ForEach(this.cfgSongs.slice(0, 8), (song: SongInfo, idx: number) => {
+                Text((idx + 1).toString() + '. ' + song.name + ' · ' + song.singer)
+                  .fontSize(FONT.caption)
+                  .fontColor(this.p().text2)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .width('100%')
+              }, (song: SongInfo, idx: number) => song.id + '_' + idx.toString())
+              Row({ space: 10 }) {
+                Button('播放全部')
+                  .fontSize(FONT.callout)
+                  .fontColor('#FF191713')
+                  .backgroundColor(this.p().primary)
+                  .borderRadius(RADIUS.pill)
+                  .height(40)
+                  .layoutWeight(1)
+                  .onClick(() => {
+                    this.playCfgSongs();
+                  })
+                Button('下载全部')
+                  .fontSize(FONT.callout)
+                  .fontColor(this.p().text)
+                  .backgroundColor(this.p().cardAlt)
+                  .borderRadius(RADIUS.pill)
+                  .height(40)
+                  .layoutWeight(1)
+                  .onClick(() => {
+                    this.downloadCfgSongs();
+                  })
+              }
+              .width('100%')
+            }
+            if (this.cfgSheets.length > 0) {
+              ForEach(this.cfgSheets.slice(0, 6), (sheet: SheetInfo, idx: number) => {
+                Text('· ' + sheet.name)
+                  .fontSize(FONT.caption)
+                  .fontColor(this.p().text2)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .width('100%')
+              }, (sheet: SheetInfo, idx: number) => sheet.id + '_' + idx.toString())
+            }
+            if (this.cfgTags.length > 0) {
+              ForEach(this.cfgTags.slice(0, 8), (tag: SheetTag, idx: number) => {
+                Text('· ' + tag.name)
+                  .fontSize(FONT.caption)
+                  .fontColor(this.p().text2)
+                  .width('100%')
+              }, (tag: SheetTag, idx: number) => tag.id + '_' + idx.toString())
+            }
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .padding({ top: 4, bottom: 8 })
+      }
+      .height(400)
+      .width('100%')
+      .scrollBar(BarState.Off)
+    }
+    .width('100%')
+  }
+
   @Builder
   menuSheet() {
     Column({ space: 4 }) {
@@ -2619,11 +2910,6 @@ export struct SourcesPage {
             .fontSize(FONT.headline)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.p().text)
-            .width('100%')
-          Text('粘贴音源脚本的直链（http / https）。支持一次多行，每行一个链接，会逐个下载导入。')
-            .fontSize(FONT.caption)
-            .fontColor(this.p().text2)
-            .lineHeight(18)
             .width('100%')
           TextArea({ text: this.netUrl, placeholder: 'https://example.com/lx-source.js' })
             .fontSize(FONT.caption)
@@ -2712,6 +2998,8 @@ export struct SourcesPage {
         }
         .width('100%')
         .padding({ left: 4, right: 4, top: 8 })
+      } else if (this.cfgMode) {
+        this.configSheet()
       } else {
         this.menuRow($r('sys.symbol.checkmark_circle'), '自检（真实取一次链接）', false, () => {
           this.checkOne(this.menuTarget);
@@ -2722,12 +3010,13 @@ export struct SourcesPage {
         this.menuRow($r('sys.symbol.textformat'), '重命名', false, () => {
           this.renameMode = true;
         })
+        // 只有 MusicFree 插件有「用户变量 / 扩展能力」，洛雪脚本没有这些协议字段
+        if (this.isMusicFree(this.menuTarget)) {
+          this.menuRow($r('sys.symbol.gearshape'), '配置与能力', false, () => {
+            this.openConfig(this.menuTarget);
+          })
+        }
         // 排序入口已从菜单移除：改为在列表里短长按卡片后上下拖动
-        Text('调整顺序：按住约 0.2 秒上下拖动；拖到屏幕上下边缘会自动滚动，可移到屏幕外的音源')
-          .fontSize(FONT.caption)
-          .fontColor(this.p().text3)
-          .width('100%')
-          .padding({ left: 4, right: 4, top: 10, bottom: 2 })
       }
     }
     .width('100%')
@@ -2797,7 +3086,6 @@ export struct SourcesPage {
               EmptyView({
                 icon: $r('sys.symbol.link'),
                 title: '还没有音源',
-                hint: '从本机选一个洛雪音源脚本（.js），才能播放歌曲。可以一次选多个。',
                 action: '本地导入',
                 onAction: () => {
                   this.importScript();

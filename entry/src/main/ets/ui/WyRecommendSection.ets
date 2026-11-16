@@ -29,7 +29,6 @@ const REC_PAGE_HEIGHT: number = 292;
  * 纵向列表（序号 + 封面 + 歌名/歌手 + 时长，与账号页原列表同款），30 首切成
  * 6 页，左右滑动按「组」翻页，页面下方显示「第 N / M 组 · 共 30 首」。
  * 点播仍传全量 songList + 全局下标，翻到任意一组都从正确的那首开始。
- * 卡片 / 封面 / 标题头复用公共组件与青绿玻璃四件套，不另造样式（铁律 8）。
  * 分组 key 带 wyRecVersion，刷新后强制重建，避免 ForEach 复用旧行不更新。
  */
 @Component
@@ -121,9 +120,6 @@ export struct WyRecommendSection {
 
       Column({ space: 3 }) {
         Text('登录网易云账号').fontSize(FONT.callout).fontWeight(FontWeight.Medium).fontColor(this.p().text)
-        Text('查看基于你听歌喜好的每日推荐与推荐歌单')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -244,9 +240,6 @@ export struct WyRecommendSection {
               .fontSize(FONT.micro)
               .fontColor(this.p().text3)
             Blank()
-            Text('左右滑动换组')
-              .fontSize(FONT.micro)
-              .fontColor(this.p().text3)
           }
           .width('100%')
           .padding({ left: 4, right: 4 })

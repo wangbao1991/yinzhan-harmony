@@ -134,7 +134,7 @@ export struct SheetDetailPage {
       this.songs = list;
       if (list.length === 0) {
         this.message = this.sheet.kind === 'local' ? '还没有导入本地音乐' :
-          (this.sheet.kind === 'favorites' ? '还没有收藏歌曲，在播放页点心形按钮即可' :
+          (this.sheet.kind === 'favorites' ? '还没有收藏歌曲' :
             (this.sheet.kind === 'history' ? '还没有播放记录' : '这个列表暂时拿不到歌曲'));
       }
     } catch (e) {
@@ -424,7 +424,7 @@ export struct SheetDetailPage {
     if (this.songs.length === 0) {
       // 删到空不能只剩一个空壳：补一句「怎么才会有歌」，否则空态一片白，
       // 用户会以为页面坏了（清空后尤其明显）。
-      this.message = this.isFavKind() ? '还没有收藏歌曲，在播放页点心形按钮即可' : '还没有播放记录';
+      this.message = this.isFavKind() ? '还没有收藏歌曲' : '还没有播放记录';
       this.selectMode = false;
       this.selectedIds = [];
     }
@@ -468,23 +468,29 @@ export struct SheetDetailPage {
     this.songs = [];
     this.sheet.cover = '';
     this.sheet.trackCount = 0;
-    this.message = this.isFavKind() ? '还没有收藏歌曲，在播放页点心形按钮即可' : '还没有播放记录';
+    this.message = this.isFavKind() ? '还没有收藏歌曲' : '还没有播放记录';
     this.selectMode = false;
     this.selectedIds = [];
     App.get().toast(this.isFavKind() ? '已清空我喜欢' : '已清空最近播放');
   }
 
+  /**
+   * 下载全部：先在本页内存里筛掉本地 / 已下载的歌，再整批交给 Downloader.enqueueAll。
+   * 改造前是逐首 enqueue，每首都同步刷盘 + 全局广播，加几十上百首会把 UI 线程堵住；
+   * 现在整批只落盘一次、只广播一次、只补位一次。
+   * hasDownload 仍逐首判（纯内存比较，不触发 IO / 重绘），保留「本地库已有不再下」的语义。
+   */
   private downloadAll(): void {
     if (this.songs.length === 0) {
       return;
     }
-    let count = 0;
+    const pending: SongInfo[] = [];
     for (const song of this.songs) {
       if (!App.get().hasDownload(song) && song.source !== 'local') {
-        App.get().downloads.enqueue(song);
-        count++;
+        pending.push(song);
       }
     }
+    const count = App.get().downloads.enqueueAll(pending);
     App.get().toast(count > 0 ? '已加入 ' + count.toString() + ' 首到下载队列' : '这些歌都已经在本地了');
   }
 

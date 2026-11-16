@@ -85,21 +85,14 @@ export class FavSyncHub {
   /* ---------------- 统一状态聚合：UI 唯一的结论来源 ---------------- */
 
   /**
-   * 汇总一份「真实同步状态」。scope 兼容历史的 'all' / 'wy' / 'qq' / 'kg'：
-   * 后两个平台已删除，返回中性空态，旧调用点不会崩也不会误报「已同步」。
+   * 汇总一份「真实同步状态」。scope 仅保留 'all' / 'wy' 两个取值，
+   * 统一走网易云一份真实队列，不再为已删平台构造空态。
    *
    * 只读、不触发广播：可以在 build 里安全反复调用。
    * clean 刻意严格：已登录 + 无在途 + 无失败 + 状态 ok + 队列真的清空 +
    * 有过一次成功同步，才允许说「已与账号同步」。
    */
   status(scope: string): FavSyncStatus {
-    const empty: FavSyncStatus = {
-      loggedIn: false, syncing: false, failed: false,
-      auto: 0, manual: 0, at: 0, clean: false
-    };
-    if (scope !== 'all' && scope !== 'wy') {
-      return empty;
-    }
     const wy = WyFavSync.get();
     wy.ensureReady();
     let loggedIn = false;

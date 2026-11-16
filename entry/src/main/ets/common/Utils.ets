@@ -21,28 +21,6 @@ export function withAlpha(color: string, alpha: number): string {
   return 'rgba(' + r.toString() + ',' + g.toString() + ',' + b.toString() + ',' + alpha.toString() + ')';
 }
 
-/** 把颜色调亮/调暗，ratio > 0 变亮，< 0 变暗 */
-export function shade(color: string, ratio: number): string {
-  let hex = color;
-  if (hex.startsWith('#')) {
-    hex = hex.substring(1);
-  }
-  if (hex.length === 8) {
-    hex = hex.substring(2);
-  }
-  if (hex.length !== 6) {
-    return color;
-  }
-  const adjust = (value: number): number => {
-    const target = ratio > 0 ? 255 : 0;
-    const result = Math.round(value + (target - value) * Math.abs(ratio));
-    return Math.max(0, Math.min(255, result));
-  };
-  const r = adjust(Number.parseInt(hex.substring(0, 2), 16));
-  const g = adjust(Number.parseInt(hex.substring(2, 4), 16));
-  const b = adjust(Number.parseInt(hex.substring(4, 6), 16));
-  return '#' + toHex(r) + toHex(g) + toHex(b);
-}
 
 function toHex(value: number): string {
   const text = value.toString(16);
@@ -142,11 +120,6 @@ export function clamp(value: number, min: number, max: number): number {
   return value;
 }
 
-export function wait(ms: number): Promise<void> {
-  return new Promise<void>((resolve) => {
-    setTimeout(() => resolve(), ms);
-  });
-}
 
 export function firstSinger(singer: string): string {
   const idx1 = singer.indexOf('/');

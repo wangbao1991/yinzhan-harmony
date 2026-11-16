@@ -81,10 +81,6 @@ export struct PlaySettingsPage {
         .fontWeight(FontWeight.Bold)
         .fontColor(this.p().text)
         .width('100%')
-      Text('播放时会自动降级保证能出声；下载严格按所选音质，拿不到就报错。母带 / 全景声等档位只在音源声明支持后出现')
-        .fontSize(FONT.caption)
-        .fontColor(this.p().text3)
-        .width('100%')
 
       Column() {
         ForEach(this.qualityOptionList(), (item: string) => {
@@ -150,7 +146,6 @@ export struct PlaySettingsPage {
               SettingSwitchRow({
                 icon: $r('sys.symbol.play_circle'),
                 title: '启动时自动续播',
-                hint: '打开后进入应用就接着放上次那首',
                 value: this.autoPlay,
                 onChange: (on: boolean) => {
                   this.autoPlay = on;
@@ -161,7 +156,6 @@ export struct PlaySettingsPage {
               SettingSwitchRow({
                 icon: $r('sys.symbol.clock'),
                 title: '记住播放进度',
-                hint: '下次打开从上次的位置继续',
                 value: this.rememberPos,
                 onChange: (on: boolean) => {
                   this.rememberPos = on;
@@ -172,7 +166,6 @@ export struct PlaySettingsPage {
               SettingSwitchRow({
                 icon: $r('sys.symbol.arrow_down_circle'),
                 title: '弱网预加载下一首',
-                hint: '本首剩 60 秒时提前取好下一首链接，切歌少等待',
                 value: this.preloadNext,
                 onChange: (on: boolean) => {
                   this.preloadNext = on;
@@ -183,7 +176,6 @@ export struct PlaySettingsPage {
               SettingSwitchRow({
                 icon: $r('sys.symbol.speaker_wave_2'),
                 title: '忽略音频打断',
-                hint: '来电/其他应用播放时不被暂停',
                 value: this.ignoreInterrupt,
                 onChange: (on: boolean) => {
                   this.ignoreInterrupt = on;

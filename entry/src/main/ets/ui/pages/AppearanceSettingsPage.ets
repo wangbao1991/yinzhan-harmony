@@ -13,9 +13,7 @@ import { SettingSwitchRow, applyThemeMode } from '../SettingsCommon';
  *
  * v2.62：把设置主页的「外观」卡与「歌词」卡整合成一个二级界面，主页只留一个入口。
  * 主题三档仍直接改系统 ColorMode 并广播 isDark（与「从备份恢复」共用
- * SettingsCommon.applyThemeMode 单一实现）；光感四档迁移提示随主题一并搬来。
- * v2.80：青绿液态玻璃整套风格连根删除，本页「主题」分组只保留「模式」一行，
- * 两段风格说明文字一并移除；界面固定为纸墨，不再提供第二套主题切换。
+ * SettingsCommon.applyThemeMode 单一实现）。
  */
 @Component
 export struct AppearanceSettingsPage {
@@ -23,8 +21,6 @@ export struct AppearanceSettingsPage {
   @StorageProp('lightSense') lightLevel: number = 3;
   @StorageProp('topSafe') topSafe: number = 24;
   @State themeMode: number = 0;
-  /** 光感四档移除的一次性提示（只在「曾选过非默认档且没看过」时出现） */
-  @State lightNotice: boolean = false;
   @State showTrans: boolean = true;
   @State lyricSize: number = 1;
   private settings: Settings = Settings.get();
@@ -35,17 +31,8 @@ export struct AppearanceSettingsPage {
 
   private reload(): void {
     this.themeMode = this.settings.themeMode();
-    this.lightNotice = this.needLightNotice();
     this.showTrans = this.settings.showTrans();
     this.lyricSize = this.settings.lyricSize();
-  }
-
-  /**
-   * 光感四档迁移提示只在「曾经真选过非默认档」且「没看过提示」时出现。
-   * 默认值 3 说明从没动过这一项，弹了反而莫名其妙。
-   */
-  private needLightNotice(): boolean {
-    return !this.settings.lightSenseNoticeSeen() && this.settings.lightSense() !== 3;
   }
 
   private p(): Palette {
@@ -103,42 +90,8 @@ export struct AppearanceSettingsPage {
               .height(56)
               .padding({ left: 16, right: 16 })
 
-              // v2.80：青绿液态玻璃整套风格与两段说明文字一并去除，「主题」分组
-              // 只保留「模式」（跟随系统 / 浅色 / 深色）这一行，界面固定为纸墨。
               // v2.52 墨栈：界面为不反光的纸墨表面，光感档位视觉归一为单一实色，
               // 不再提供玻璃质感选项。lightSense 符号与全站 @StorageProp 订阅保留（兼容回滚）。
-              // v2.56：移除时没给任何提示，这里给老用户一条只出现一次的迁移说明。
-              if (this.lightNotice) {
-                Row({ space: 10 }) {
-                  Column()
-                    .width(3)
-                    .height(30)
-                    .borderRadius(2)
-                    .backgroundColor(this.p().primary)
-                    .accessibilityLevel('no')
-                  Text('光感四档已取消：界面改为不反光的纸墨表面，深浅色仍按上面的「主题」走。')
-                    .fontSize(FONT.caption)
-                    .fontColor(this.p().text2)
-                    .layoutWeight(1)
-                    .lineHeight(18)
-                  Text('知道了')
-                    .fontSize(FONT.caption)
-                    .fontColor(this.p().primary)
-                    .height(44)
-                    .textAlign(TextAlign.Center)
-                    .padding({ left: 8, right: 8 })
-                    .responseRegion({ x: 0, y: -6, width: '100%', height: 48 })
-                    .accessibilityText('知道了，不再提示')
-                    .accessibilityLevel('yes')
-                    .onClick(() => {
-                      this.lightNotice = false;
-                      this.settings.setLightSenseNoticeSeen();
-                    })
-                }
-                .width('100%')
-                .padding({ left: 16, right: 10, top: 2, bottom: 6 })
-                .accessibilityText('光感四档已取消：界面改为不反光的纸墨表面，深浅色仍按上面的主题设置')
-              }
             }
             .width('100%')
             .borderRadius(RADIUS.lg)
@@ -179,7 +132,6 @@ export struct AppearanceSettingsPage {
               SettingSwitchRow({
                 icon: $r('sys.symbol.textformat'),
                 title: '显示翻译歌词',
-                hint: '有翻译时在原文下方一起显示',
                 value: this.showTrans,
                 onChange: (on: boolean) => {
                   this.showTrans = on;

@@ -27,6 +27,12 @@
                        「音乐库并入首页」：底栏三项、内容不许留两份、咪咕退出发现
   AE 横滑切页       —— 「底栏滑动 / 自动缩放 / 自动伸展」：Swiper 容器、指示器跟手；
                        收起时换成「圆按钮 + 播放胶囊」并排，不是整条缩窄
+  DA~DG 见各函数文档（听到 2/3 自动下载、MusicFree 音源能力扩展、批量下载单次收口、
+                       下载稳态渲染收口：进度/状态双信号拆分 + byId O(1) 索引、
+                       下载完成瞬间收口：串行错峰 + 一次写全 + 广播合并 + 异步 IO 根治、
+                       下载管理页重做：设置搬数据页 + 完成留队且不进本地音乐 + 长按多选/暂停/左滑删除、
+                       下载完成全局顿挫根治：流式标签写入消灭整文件大对象/GC STW、
+                       完成帧一次刷盘 + 一次全局扇出）
 
 用法：python3 scripts/selfcheck.py [工程根目录]
 退出码：0 = 全部通过；1 = 有需要人工确认的项
@@ -96,6 +102,10 @@ def check_dead_builder(src):
             # 也可能通过属性引用（.navDestination(this.pageMap)）
             if re.search(r'this\.' + name + r'\s*\(', s) or re.search(r'\.\w+\(this\.' + name + r'\)', s):
                 continue
+            # @BuilderParam 的默认空实现（如 content0 = this.emptyContent）：作为默认值
+            # 赋值即已被使用，调用方会注入真实 builder，本身不会被直接调用。
+            if re.search(r'@BuilderParam[^\n]*=\s*this\.' + name + r'\b', s):
+                continue
             dead += 1
             issues.append(('B', 'FAIL', f'{rel(f)}: {name}() 从未被调用'))
     if dead == 0:
@@ -125,7 +135,7 @@ def check_param_builder(src):
 # markGlyph 同理：形状走的是静态分支（有未通过项 / 没有各一条调用），
 # 实参里只有 this.p() 这一层主题取色，主题切换时整页重建即可跟上。
 EXEMPT = {'glow', 'glassHighlight', 'sectionTitle', 'actionRow', 'menuRow', 'actionButton',
-          'markGlyph'}
+          'markGlyph', 'hdsTab'}
 
 
 def check_page_subscription(src):
@@ -1121,20 +1131,25 @@ def check_tab_routes(src):
         return
     bad = 0
 
-    labels = re.findall(r"label:\s*'([^']+)'", shell)
+    # 官方 HdsTabs 重做后，页签标签在 HdsNav.ets 的 NAV_TABS，页面内容在 Index 的
+    # homeContent/discoverContent/settingsContent builder（经 @BuilderParam 注入 HdsNav）。
+    nav = next((s for f, s in src.items() if f.endswith('ui/HdsNav.ets')), '')
+    label_src = nav if nav else shell
+    labels = re.findall(r"label:\s*'([^']+)'", label_src)
     if labels != ['首页', '发现', '设置']:
         bad += 1
         issues.append(('AC', 'FAIL',
                        '底栏不是「首页 / 发现 / 设置」：音乐库已并入首页，发现必须占第二个位置'))
 
-    tabs = _func_body(index, 'tabContent')
-    if 'HomePage(' not in tabs:
+    # 页面内容 builder 可能分散在多个 @Builder，合并整个 Index 检查挂载。
+    tabs = _func_body(index, 'tabContent') or ''
+    if 'HomePage(' not in index:
         bad += 1
         issues.append(('AC', 'FAIL', '首页没挂进一级页容器，点底栏「首页」会是空白'))
-    if 'DiscoverPage()' not in tabs:
+    if 'DiscoverPage()' not in index:
         bad += 1
         issues.append(('AC', 'FAIL', '发现页没挂进一级页容器，点底栏「发现」会是空白'))
-    if 'SettingsPage()' not in tabs:
+    if 'SettingsPage()' not in index:
         bad += 1
         issues.append(('AC', 'FAIL', '设置页没挂进一级页容器，点底栏「设置」会是空白'))
     if 'LibraryPage()' in tabs or 'pages/LibraryPage' in index:
@@ -1264,7 +1279,6 @@ def check_tab_routes(src):
     # 少任一环都会变成「能导出但恢复后界面不刷新」或「权限还挂着」的半截形态。
     backup = next((s for f, s in src.items() if f.endswith('core/Backup.ets')), '')
     library = next((s for f, s in src.items() if f.endswith('core/Library.ets')), '')
-    stats = next((s for f, s in src.items() if f.endswith('core/PlayStats.ets')), '')
     if not backup:
         bad += 1
         issues.append(('AC', 'FAIL', '缺少 core/Backup.ets：设置页的备份 / 恢复入口会成死键'))
@@ -1281,9 +1295,9 @@ def check_tab_routes(src):
     if 'doBackup' not in data_view or 'doRestore' not in data_view:
         bad += 1
         issues.append(('AC', 'FAIL', '数据管理页备份 / 恢复入口没接上实现'))
-    if 'reload(): void' not in library or 'reload(): void' not in stats:
+    if 'reload(): void' not in library:
         bad += 1
-        issues.append(('AC', 'FAIL', 'Library / PlayStats 缺 reload()：恢复后界面仍显示旧内存数据'))
+        issues.append(('AC', 'FAIL', 'Library 缺 reload()：恢复后界面仍显示旧内存数据'))
     try:
         module_json = open(os.path.join(ROOT, 'entry/src/main/module.json5'), encoding='utf-8').read()
         if 'ACCELEROMETER' in module_json or 'ohos.permission.VIBRATE' in module_json:
@@ -1351,7 +1365,6 @@ def check_tab_routes(src):
         ('Backup', backup_src, r'HOME_LAYOUT|DEFAULT_TAB|HomeLayout'),
         ('EntryAbility', entry_ability, r'homeLayout|defaultTab|v4_home_layout|v4_default_tab'),
         ('Constants', constants, r'HOME_LAYOUT|DEFAULT_TAB'),
-        ('PlayStats', stats, r'playsInDays|msTotal|finishedTotal|lastDayMap|自动歌单读取'),
     ):
         if re.search(pattern, text):
             bad += 1
@@ -1394,7 +1407,8 @@ def check_tab_routes(src):
     if 'for (const song of list)' not in artist_page:
         bad += 1
         issues.append(('AC', 'FAIL', '专辑分组没遍历已加载歌曲：数据来源不成立'))
-    if '不是歌手全部专辑总数' not in artist_page:
+    # 2026-11-16：界面不再挂说明句，口径标注并入副标题（「N 部已加载专辑」）
+    if '部已加载专辑' not in artist_page or ' 部专辑' in artist_page:
         bad += 1
         issues.append(('AC', 'FAIL', '没诚实标注专辑数口径：会把已加载统计冒充全部专辑'))
     if 'Math.random' in artist_page or 'setInterval' in artist_page:
@@ -1574,12 +1588,11 @@ def check_tab_routes(src):
     if '不含音源脚本' in backup:
         bad += 1
         issues.append(('AC', 'FAIL', '备份注释仍写「不含音源脚本」：与 v2.39 范围矛盾'))
-    if '自建歌单' in data_view:
+    # 2026-11-16：用户要求清掉界面说明文案，数据页不再挂备份范围长句；
+    # 备份范围仍由上面两条「exportScripts + restoreFromBackup」实现断言守住。
+    if '包含收藏、歌单收藏' in data_view or '自建歌单' in data_view:
         bad += 1
-        issues.append(('AC', 'FAIL', '数据说明仍写「自建歌单」：工程没有新建歌单入口'))
-    if '音源脚本（含脚本正文' not in data_view:
-        bad += 1
-        issues.append(('AC', 'FAIL', '数据管理页数据说明没把音源脚本列入备份范围'))
+        issues.append(('AC', 'FAIL', '数据管理页的备份范围说明又挂回来了（用户要求删说明）'))
 
     # v2.40：MusicFree 音源支持。洛雪是 IIFE + lx.on(request)，MusicFree 是
     # CommonJS + 具名方法 + require 9 包；只做「能导入」会退化成「自检能过、
@@ -1732,7 +1745,7 @@ def check_tab_routes(src):
     if 'ok = true;\n        const first = list[0];' in source_repo:
         bad += 1
         issues.append(('AC', 'FAIL', 'checkMusicFree 仍无条件把取链失败判成 ok'))
-    if "reason + '；脚本已就绪，仍会被搜索问到" not in src_page:
+    if "if (item.health === 'error')" not in src_page or 'item.message.length > 0' not in src_page:
         bad += 1
         issues.append(('AC', 'FAIL', '音源卡片没显示自检的真实原因'))
 
@@ -1893,8 +1906,8 @@ def check_tab_routes(src):
         issues.append(('AC', 'FAIL', '冷启动 loadAll 又漏传协议 kind'))
     for kw, msg in (
         ("item.health === 'ok'", '单源自检 toast 没读独立结论'),
-        ('const reason = item.message.length > 0', '自检失败没读取真实结论 message'),
-        ('脚本已就绪，仍会被搜索问到，可点「自检」重试', '自检失败没说明「源还在搜索里」'),
+        ("if (item.health === 'error')", '自检失败没独立分支'),
+        ('? (item.message.length > 60 ? item.message.substring(0, 60)', '自检失败没读取真实结论 message'),
     ):
         if kw not in src_page:
             bad += 1
@@ -2052,12 +2065,18 @@ def check_tab_routes(src):
     if head_end > 0 and 'SelectionBar({' in sheet_page[:head_end]:
         bad += 1
         issues.append(('AC', 'FAIL', 'v2.55 歌单详情页选择条又回到头部卡片（应固定在列表下方）'))
-    # ④ 下载页：入口早已移除，多选状态机与批量删除已无触发路径，残留即死代码
+    # ④ 下载页（v1.0 第四次返工）：长按多选重新启用，必须复用公共 SelectionBar，
+    #    且单选 / 全选 / 删除所选都有落点，不许再退化成不可达的死代码
     dl_page = next((s for f, s in src.items() if f.endswith('ui/pages/DownloadsPage.ets')), '')
-    for kw in ('selectMode', 'selectedIds', 'toggleSelectAll', 'confirmDeleteSelected', 'removeMany'):
-        if kw in dl_page:
+    for kw, msg in (('SelectionBar({', '长按多选没接公共 SelectionBar'),
+                    ('selectMode', '缺多选状态机'),
+                    ('selectedIds', '缺已选集合'),
+                    ('toggleAll()', '缺全选 / 取消全选'),
+                    ('deleteSelected()', '缺删除所选'),
+                    ('LongPressGesture(', '缺长按手势')):
+        if kw not in dl_page:
             bad += 1
-            issues.append(('AC', 'FAIL', 'v2.55 下载页仍有不可达的多选残留：' + kw))
+            issues.append(('AC', 'FAIL', '下载页 ' + msg))
 
     # ── v2.56 包 4：无障碍与响应式 ──
     # ① 读屏语义只有一条通路：IconTap 把 label 交给 accessibilityText，
@@ -2109,33 +2128,9 @@ def check_tab_routes(src):
     if src_page.count('responseRegion({ x: 0, y: -2, width: \'100%\', height: 48 })') < 4:
         bad += 1
         issues.append(('AC', 'FAIL', 'v2.56 操作行按钮热区不足 48vp（应四颗都补）'))
-    # ④ 设置页迁移提示条 + 旧 key 只读
-    # v2.62：光感迁移提示随「主题」搬进外观二级页，守断言的读取范围跟着扩到
-    # 「设置主页 + 外观页」，六条约束一条不删（只是允许它出现在二级页里）。
-    st_page = next((s for f, s in src.items() if f.endswith('ui/pages/SettingsPage.ets')), '') + \
-        next((s for f, s in src.items() if f.endswith('ui/pages/AppearanceSettingsPage.ets')), '')
+    # ④（B5 已清理）v2.56 光感迁移提示条整体删除，零残留由 CY 组守护。
     art_page = next((s for f, s in src.items() if f.endswith('ui/pages/ArtistPage.ets')), '')
     ab_src = next((s for f, s in src.items() if f.endswith('entryability/EntryAbility.ets')), '')
-    const_src = next((s for f, s in src.items() if f.endswith('common/Constants.ets')), '')
-    settings_core = next((s for f, s in src.items() if f.endswith('core/Settings.ets')), '')
-    if "LIGHT_SENSE_NOTICE: string = 'v4_light_sense_notice'" not in const_src:
-        bad += 1
-        issues.append(('AC', 'FAIL', 'v2.56 没有「光感提示已看过」的独立 key（不能覆盖旧档位值）'))
-    if 'lightSenseNoticeSeen(): boolean' not in settings_core or \
-            'setLightSenseNoticeSeen(): void' not in settings_core:
-        bad += 1
-        issues.append(('AC', 'FAIL', 'v2.56 Settings 没有提示标记的读写'))
-    for kw, msg in (
-        ('@State lightNotice: boolean = false;', '没有一次性提示状态'),
-        ('private needLightNotice(): boolean', '提示条件没抽成可执行的方法'),
-        ('this.settings.lightSense() !== 3', '没判断「曾选过非默认档」，会骚扰从没动过的用户'),
-        ("Text('知道了')", '提示条没有关闭动作'),
-        ('this.settings.setLightSenseNoticeSeen()', '关掉提示后没落盘，下次还会出现'),
-        ('光感四档已取消', '提示文案丢失'),
-    ):
-        if kw not in st_page:
-            bad += 1
-            issues.append(('AC', 'FAIL', 'v2.56 SettingsPage ' + msg))
     # ⑤ 字体倍率进全局（深浅色早退不能把字号变化一起吞掉）
     if "AppStorage.setOrCreate('fontScale'" not in ab_src:
         bad += 1
@@ -2385,12 +2380,15 @@ def check_tab_routes(src):
         ('private sourceLabel(id: string): string', '缺源显示名映射，提示说不清是谁挂了'),
         ('this.failedSources = fails;', '搜索完成没把失败源落到界面状态'),
         ('sourceFaultBar()', '部分失败提示条没挂进结果区'),
-        ('@State idleTipOpen: boolean = false;', 'idle 页长说明又整块摊开'),
         ("'五大平台和已启用的插件都没搜到", '空态文案退回旧措辞，三段式没落地'),
     ):
         if kw not in search_src:
             bad += 1
             issues.append(('AC', 'FAIL', 'v2.54 包 2：' + msg))
+    # 2026-11-16：用户要求删掉界面说明，「小提示」展开卡与 idleTipOpen 状态都不许回潮
+    if "'小提示'" in search_src or 'idleTipOpen' in search_src:
+        bad += 1
+        issues.append(('AC', 'FAIL', 'v2.54 包 2：idle 页说明卡又回来了（用户要求删说明）'))
 
     if bad == 0:
         issues.append(('AC', 'PASS',
@@ -2429,249 +2427,126 @@ def check_tab_routes(src):
 
 
 def check_tab_swipe(src):
-    """AE：一级页横滑切页 + 底栏两种形态。
+    """AE/AF/AG：官方 HDS HdsTabs 悬浮导航 + 沉浸光感 + MiniBar 展开收起。
 
-    用户拿参考软件要「底部 tab 栏的滑动、自动缩放、自动伸展」，实测是两件事：
-      1. 横滑切页：容器必须是能跟手的 Swiper。原来是 Stack + visibility，
-         手指横滑毫无反应，底栏也没有「选中块滑过去」的参照物；
-      2. 收起形态：参考软件不是把整条栏缩窄（那只是变小，还是同一条栏），
-         而是换成一排——左边一枚当前页的圆形按钮，右边一条迷你播放胶囊，
-         横向铺满。所以「播放条」必须在收起时并进这一行，
-         而不是继续挂在底栏上方单独一条（那样看着就是「缩水」）。
-    另外 loop 必须关掉：末页再右滑绕回首页时，底栏指示器会从 2/3 位置瞬移回 0，
-    用户会以为点错了页。
+    本次完全重做（用户明确「原有的舍弃重做」）：把旧的标准 Tabs + 自绘 HdsTabBar/
+    HdsMiniBar 悬浮层，换成 UIDesignKit 官方 HdsTabs（见 ui/HdsNav.ets）：
+      - 悬浮三要素 barOverlap(true) + barPosition(End) + vertical(false)；
+      - barFloatingStyle: barWidth / barBottomMargin / gradientMask /
+        systemMaterialEffect(hdsMaterial ADAPTIVE 类型 + ADAPTIVE 等级)；
+      - MiniBar: miniBarBuilder 放播放器 UI、barLayoutMode=VERTICAL 双行、
+        miniBarStyle=HdsBarStyle.EXPAND、onBarStyleChange 感知折叠；
+      - HdsTabsController.applyMiniBarStyle(EXPAND/COLLAPSE) 控制展开收起；
+      - BottomTabBarStyle 页签，图标用 SymbolGlyphModifier 对象；
+      - 流光 HdsFlowLight + 一镜到底 miniBar↔全屏页共用 geometryTransition id。
     """
     index = next((s for f, s in src.items() if f.endswith('pages/Index.ets')), '')
     shell = next((s for f, s in src.items() if f.endswith('ui/Shell.ets')), '')
-    if not index or not shell:
-        issues.append(('AE', 'WARN', '缺文件，跳过横滑切页检查'))
+    nav = next((s for f, s in src.items() if f.endswith('ui/HdsNav.ets')), '')
+    if not index or not nav:
+        issues.append(('AE', 'WARN', '缺 Index.ets / HdsNav.ets，跳过 HDS 导航检查'))
         return
+
     bad = 0
-
-    tabs = _func_body(index, 'tabContent') or ''
-    if not re.search(r'\bSwiper\(', tabs):
+    # ── AE：HdsTabs 容器 + 悬浮三要素 ──
+    if 'HdsNav' not in index or 'import { HdsNav }' not in index:
         bad += 1
-        issues.append(('AE', 'FAIL', '一级页容器不是 Swiper：横滑切不动，底栏指示器也没有跟手来源'))
-    if 'visibility(this.tab' in tabs:
+        issues.append(('AE', 'FAIL', 'Index 没挂 HdsNav：官方 HdsTabs 导航未接入'))
+    if not nav:
         bad += 1
-        issues.append(('AE', 'FAIL', '还在用 visibility 切页：这种写法只支持点底栏，横滑无效'))
-    # 指示器位置有两条合法路线：
-    #   a) 拖动中跟手 —— 必须接满 4 个参数。少接第一个会整体错位：
-    #      position 位拿到整数索引，at 直接 +1，手指刚碰屏幕指示器就跳到最后一格。
-    #   b) 只跟当前页 —— onChange 广播 tabSwipe，指示器自己补间过去。
-    # 两条都不占，就是换页硬跳。
-    if '.onContentDidScroll(' in tabs:
-        m = re.search(r'\.onContentDidScroll\(\s*\(([^)]*)\)', tabs)
-        n = len([x for x in m.group(1).split(',') if x.strip()]) if m else 0
-        if n < 4:
-            bad += 1
-            issues.append(('AE', 'FAIL',
-                           f'onContentDidScroll 只接了 {n} 个参数：SDK 是 4 个，少接会整体错位、指示器一碰就跳页'))
-    if '.onGestureSwipe(' not in tabs and '.onContentDidScroll(' not in tabs:
-        bad += 1
-        issues.append(('AE', 'FAIL', '没有跟手回调：拖动时指示器完全不动'))
-
-    # 跟手必须走 onGestureSwipe 的 currentOffset（vp，带符号、语义明确）。
-    # 不要再用 onContentDidScroll 的 position —— 真机上它给出的值对不上文档，
-    # 手指刚动就指到最后一格。
-    if '.onGestureSwipe(' in tabs and 'currentOffset' not in tabs:
-        bad += 1
-        issues.append(('AE', 'FAIL', '跟手回调没读 currentOffset：拿不到带符号的位移，算不出真实位置'))
-    if '.onContentDidScroll(' in tabs and '.onGestureSwipe(' in tabs:
-        bad += 1
-        issues.append(('AE', 'FAIL', '两套跟手回调同时存在：两处都在写 tabSwipe，位置会打架'))
-    if "'tabSwipe'" not in tabs:
-        bad += 1
-        issues.append(('AE', 'FAIL', '横滑进度没广播 tabSwipe，指示器拿不到连续位置'))
-    if '.loop(false)' not in tabs:
-        bad += 1
-        issues.append(('AE', 'FAIL', 'Swiper 开了 loop：末页再右滑会绕回首页，底栏顺序对不上'))
-    if '.index(this.tab)' not in tabs:
-        bad += 1
-        issues.append(('AE', 'FAIL', 'Swiper 没绑 index(this.tab)：点底栏切页容器不会动'))
-
-    switch = _func_body(index, 'switchTab') or ''
-    if 'changeIndex(' not in switch:
-        bad += 1
-        issues.append(('AE', 'FAIL', '点底栏没走 changeIndex：页面直接跳过去，没有过场'))
-
-    # 指示器：整条栏里唯一横向移动的元素，宽度等分、位置 = 索引 + 拖动比例
-    # 用方法定义精确匹配：只查 'pillX(' 的话，调用点还能命中，改名骗得过去
-    if not re.search(r'private\s+pillX\s*\(', shell) or not re.search(r'private\s+pillWidth\s*\(', shell):
-        bad += 1
-        issues.append(('AE', 'FAIL', '底栏没有滑动指示器（pillX / pillWidth）：选中态只是换颜色，看不出「滑动」'))
-    if "'tabSwipe'" not in shell:
-        bad += 1
-        issues.append(('AE', 'FAIL', '底栏没订阅 tabSwipe，指示器不会跟着横滑走'))
-
-    # 收起形态：参考软件是「圆按钮 + 播放胶囊」重新排一行，不是把整条缩窄。
-    # 只缩窄的话横向留一大截空，用户一眼就看出「只是变小了」。
-    if not re.search(r'private\s+collapse\s*\(', shell):
-        bad += 1
-        issues.append(('AE', 'FAIL', '底栏没有收起系数 collapse()：展开/收起两态没有统一的驱动值'))
-    if not re.search(r'MiniPlayer\(\{\s*inline:\s*true\s*\}\)', shell):
-        bad += 1
-        issues.append(('AE', 'FAIL', '收起态没把迷你播放条并进来（MiniPlayer inline）：播放条还单独挂在上面一条'))
-    if not re.search(r"SymbolGlyph\(\$r\('sys\.symbol\.house_fill'\)\)", shell):
-        bad += 1
-        issues.append(('AE', 'FAIL', '收起态缺圆形首页按钮：收起后没有回首页/展开底栏的入口'))
-    if re.search(r'private\s+barWidth\s*\(', shell):
-        bad += 1
-        issues.append(('AE', 'FAIL', '底栏还在整条缩窄（barWidth）：那是「变小」，不是换形态'))
-    if 'shellCollapse' not in index:
-        bad += 1
-        issues.append(('AE', 'FAIL', '外壳那条播放条没跟着收起（shellCollapse）：收起后会出现上下两条播放条'))
-
-    # 两段时长：拖动零延迟，翻页与 Swiper 同长同曲线。
-    # 不能只按「是否拖动中」判断——翻页动画是 Swiper 自己发的，手指可能还按着，
-    # 那时拖动标志为真，指示器会停在原地干等动画跑完（录屏里就是连续静止 9 帧）。
-    if not re.search(r"@StorageProp\('tabDur'\)", shell):
-        bad += 1
-        issues.append(('AE', 'FAIL', '底栏没订阅 tabDur：分不出「拖动零延迟」和「翻页补间」，只能一种时长走到底'))
-    if not re.search(r'animateTo\(\{\s*duration:\s*this\.dur', shell):
-        bad += 1
-        issues.append(('AE', 'FAIL', '指示器没用 animateTo 按 tabDur 补间：属性动画同帧改时长不可靠，会卡住再硬跳'))
-    if "'tabDur'" not in index:
-        bad += 1
-        issues.append(('AE', 'FAIL', 'Index 没广播 tabDur：底栏不知道这一段该走多长'))
-
-    # 翻页动画一开始就要接管位置。等 onAnimationEnd 才挪，
-    # 中间那段指示器完全静止，用户看到的就是「滑过去停一下」。
-    if '.onAnimationStart(' not in tabs:
-        bad += 1
-        issues.append(('AE', 'FAIL', 'Swiper 没接 onAnimationStart：拿不到 targetIndex，只能等动画结束再补，中间必然停一下'))
-    elif 'PAGE_ANIM_MS' not in (_func_body(index, 'beginRelease') or ''):
-        bad += 1
-        issues.append(('AE', 'FAIL', '接管时没广播补间时长（PAGE_ANIM_MS）：指示器会硬跳，不与页面同步'))
-
-    # 指示器不许再用属性动画：同一帧里「时长从 0 变 300」和「位置变化」谁先应用不确定
-    tb_start = shell.find('export struct TabBar')
-    tb_end = shell.find('export struct MiniPlayer')
-    tb = shell[tb_start:tb_end] if tb_start >= 0 and tb_end > tb_start else ''
-    # 去掉注释行再查：注释里提到 .animation() 不算使用
-    tb_code = '\n'.join([l for l in tb.split('\n')
-                         if not l.lstrip().startswith('*') and not l.lstrip().startswith('//')])
-    if re.search(r'\.animation\(', tb_code):
-        bad += 1
-        issues.append(('AE', 'FAIL', '指示器还在用属性动画 .animation()：同一帧改时长取哪次不确定，会卡住再硬跳'))
-
-    # 松手后的兜底归位必须晚于 Swiper 自己的翻页动画。
-    # 早于动画结束就归位，指示器会先被拉回旧页，动画跑完再跳新页——
-    # 就是「快到目标页时回弹一下再过去」。
-    body = _func_body(index, 'armSwipeIdle') or ''
-    if 'PAGE_ANIM_MS' not in body:
-        bad += 1
-        issues.append(('AE', 'FAIL', '兜底归位没用 PAGE_ANIM_MS：定时器可能抢在翻页动画前面、把指示器拉回旧页'))
-    if 'onAnimationEnd' not in tabs:
-        bad += 1
-        issues.append(('AE', 'FAIL', 'Swiper 没接 onAnimationEnd：指示器只能靠定时器猜动画何时结束'))
-
-    # 手指是否还在屏幕上，必须以触摸事件为准。
-    # onGestureSwipe 在松手后的收尾阶段还会回调，那时给的偏移量已经不是手指位置，
-    # 照着走就会把指示器从新页拽回中间——用户看到的那下回弹。
-    if '.onTouch(' not in tabs or 'TouchType.Down' not in tabs:
-        bad += 1
-        issues.append(('AE', 'FAIL', 'Swiper 没接 onTouch：分不出手指是否还在屏幕上，松手后的残余回调会拽回指示器'))
-    elif not re.search(r'if \(!this\.dragging\)', tabs):
-        bad += 1
-        issues.append(('AE', 'FAIL', 'onGestureSwipe 没按 dragging 门控：松手后的残余位移照样生效'))
-
-    # 异常位移必须整帧丢弃，不能「跟一半」。
-    # 跟一半 = 主动往回退半格，看起来就是回弹。
-    push = _func_body(index, 'pushSwipe') or ''
-    if re.search(r'=\s*this\.swipeAt\s*\+\s*\(', push):
-        bad += 1
-        issues.append(('AE', 'FAIL', 'pushSwipe 对异常位移做了「跟一半」：那本身就是一次回退，会看出回弹'))
-    if 'return;' not in push:
-        bad += 1
-        issues.append(('AE', 'FAIL', 'pushSwipe 没有丢弃异常位移的分支：基准切换的整格跳变会直接生效'))
-
-    # ── 收起过渡的分层（AF）──
-    # 两个形态同步淡入淡出，中间就是两团半透明糊在一起，看着是「换了一套 UI」。
-    # 参考软件是分层的：文字先走、图标跟上、圆按钮和胶囊在后半段浮现。
-    af = 0
-    if not re.search(r'private\s+stage\s*\(\s*from:\s*number', shell):
-        af += 1
-        issues.append(('AF', 'FAIL', '底栏没有分段进度 stage()：各元素只能同步淡入淡出，中间是两团半透明'))
+        issues.append(('AE', 'FAIL', '缺 ui/HdsNav.ets：官方 HDS 导航组件不存在'))
     else:
-        uniq = set(re.findall(r'this\.stage\((\d+\.\d+),\s*(\d+\.\d+)\)', shell))
-        if len(uniq) < 4:
-            af += 1
-            issues.append(('AF', 'FAIL',
-                           f'分层只有 {len(uniq)} 段：文字/图标/圆按钮/胶囊至少要 4 段错开，否则是整块一起变'))
-    # 栏体必须是「一条」：
-    #   以前是宽度 100%→64%，只收右边——收起态那排其实铺满整宽，
-    #   右边界先缩回去再弹出来，左右本就不对称；缩到一半时 62 高的旧底板
-    #   和 52 高的新胶囊还能同时看见，两层圆角不同的轮廓叠成「胶囊套胶囊」。
-    #   现在宽度不动、只把高度从 62 收到 52，圆角恒等于半高。
-    if not re.search(r'private\s+barH\s*\(', shell):
-        af += 1
-        issues.append(('AF', 'FAIL', '栏体没有高度形变（缺 barH）：整条不会沉下去，只剩内容在换'))
-    elif not re.search(r'\.height\(this\.barH\(\)\)', shell):
-        af += 1
-        issues.append(('AF', 'FAIL', 'barH 定义了但没挂到栏体上：高度仍是死的 62'))
-    if not re.search(r'private\s+barR\s*\(', shell) or '.borderRadius(this.barR())' not in shell:
-        af += 1
-        issues.append(('AF', 'FAIL', '圆角没跟着高度走：收到一半会变成「圆角矩形」，不是胶囊'))
-    if 'barWidthPct' in shell:
-        af += 1
-        issues.append(('AF', 'FAIL', '又在缩宽度（barWidthPct）：右边界先收后放，左右不对称，还会露出两层轮廓'))
-    # 紧凑版不能再自带一层底板，否则又回到两条边线
-    if not re.search(r"this\.inline \? '#00000000'|\.backgroundColor\('#00000000'\)", shell):
-        af += 1
-        issues.append(('AF', 'FAIL', '紧凑播放条还画着自己的底板：和栏体叠成两条圆角不一的边线'))
-    # 高光必须垫在内容下面：盖在内容上会把封面冲成半透明灰
-    if '.overlay(this.glassHighlight' in shell:
-        af += 1
-        issues.append(('AF', 'FAIL', '玻璃高光还用 overlay 盖着：白渐变铺过封面和文字，收起态封面发灰'))
-    # 圆按钮要有放大浮现，不能只有淡入
-    if not re.search(r'\.scale\(\{\s*[\s\S]{0,80}?x:\s*0\.\d+\s*\+', shell):
-        af += 1
-        issues.append(('AF', 'FAIL', '圆按钮只有淡入没有放大（scale 常量）：出现得像「颜色变深」，没有浮现感'))
-    # 内容接力：旧图标的退场必须早于新内容登场，否则中间是一层双影
-    m_icon = re.search(r'SymbolGlyph\([\s\S]{0,220}?\.opacity\(1 - this\.stage\((0\.\d+),\s*(0\.\d+)\)\)', shell)
-    m_pill = re.search(r'MiniPlayer\(\{\s*inline:\s*true\s*\}\)[\s\S]{0,200}?\.opacity\(this\.stage\((0\.\d+),\s*(0\.\d+)\)\)',
-                       shell)
-    if not m_icon or not m_pill:
-        af += 1
-        issues.append(('AF', 'FAIL', '读不出图标/胶囊的接力段位：无法保证中间不出现双影'))
-    elif float(m_icon.group(2)) > float(m_pill.group(1)):
-        af += 1
-        issues.append(('AF', 'FAIL',
-                       f'图标退到 {m_icon.group(2)} 才干净、胶囊 {m_pill.group(1)} 就开始浮现：中间会看到图标压在封面上'))
-    # 外壳那条悬浮播放条也要错开，不能直连 shellCollapse
-    if 'barStage' not in index:
-        af += 1
-        issues.append(('AF', 'FAIL', '外壳播放条直连 shellCollapse：和底栏胶囊同步一进一出，中间会看到两条播放条'))
-    if af == 0:
-        issues.append(('AF', 'PASS', '收起过渡只有一条栏体（62→52 下沉、圆角恒半高），内容单向接力不重叠，高光垫底'))
+        if "from '@kit.UIDesignKit'" not in nav or 'HdsTabs' not in nav:
+            bad += 1
+            issues.append(('AE', 'FAIL', 'HdsNav 没有从 @kit.UIDesignKit import HdsTabs'))
+        if not re.search(r'\bHdsTabs\(\{', nav):
+            bad += 1
+            issues.append(('AE', 'FAIL', 'HdsNav 里没有 HdsTabs({...}) 一级容器'))
+        for three in ('.barOverlap(true)', '.barPosition(BarPosition.End)', '.vertical(false)'):
+            if three not in nav:
+                bad += 1
+                issues.append(('AE', 'FAIL', f'悬浮三要素缺 {three}'))
+        # 三个一级页必须经 @BuilderParam 注入（首页/发现/设置）。
+        for slot in ('content0:', 'content1:', 'content2:'):
+            if slot not in index:
+                bad += 1
+                issues.append(('AE', 'FAIL', f'Index 没把一级页注入 HdsNav 的 {slot}'))
+        if nav.count('.tabBar(this.tabStyle(') < 3:
+            bad += 1
+            issues.append(('AE', 'FAIL', '少于 3 个 TabContent 用 BottomTabBarStyle：三入口不全'))
+        if 'new BottomTabBarStyle(' not in nav or 'SymbolGlyphModifier' not in nav:
+            bad += 1
+            issues.append(('AE', 'FAIL', '页签没用 BottomTabBarStyle + SymbolGlyphModifier（直接塞 $r 会编译失败）'))
+        # 受控页码：index 由 @Prop selected 驱动，onChange 回写。
+        if 'index: this.selected' not in nav or '.onChange(' not in nav:
+            bad += 1
+            issues.append(('AE', 'FAIL', 'HdsTabs 没做受控页码：横滑/点页签无法双向同步'))
 
-    # ── 两种形态的命中测试（AG）──
-    # 展开态和收起态在像素上完全重叠，收起态那层展开时是全透明的，
-    # 但里面的封面 / 歌名 / 三个控制键照样能命中：点「发现」会掉进播放页，
-    # 点「设置」会触发下一首或队列。hitTestBehavior(None) 只关自己、不关子树，
-    # 必须整层 enabled 一起关。这条规则就是防它被改回去。
+    # ── AF：barFloatingStyle 沉浸光感 + MiniBar 双行 + 流光 ──
+    af = 0
+    if '.barFloatingStyle(' not in nav:
+        af += 1
+        issues.append(('AF', 'FAIL', 'HdsTabs 没配 barFloatingStyle：不是悬浮胶囊'))
+    for fld in ('barWidth', 'barBottomMargin', 'gradientMask', 'systemMaterialEffect', 'miniBar'):
+        if fld not in nav:
+            af += 1
+            issues.append(('AF', 'FAIL', f'barFloatingStyle 缺 {fld}：悬浮配置不全'))
+    # systemMaterialEffect：hdsMaterial ADAPTIVE 类型 + ADAPTIVE 等级（官方要求）。
+    if 'hdsMaterial.MaterialType.ADAPTIVE' not in nav or 'hdsMaterial.MaterialLevel.ADAPTIVE' not in nav:
+        af += 1
+        issues.append(('AF', 'FAIL', 'systemMaterialEffect 没用 hdsMaterial 的 ADAPTIVE 类型+等级'))
+    # MiniBar：miniBarBuilder + barLayoutMode=VERTICAL + miniBarStyle=EXPAND + onBarStyleChange。
+    if 'miniBarBuilder:' not in nav or '@Builder\n  miniBarBuilder()' not in nav and 'miniBarBuilder()' not in nav:
+        af += 1
+        issues.append(('AF', 'FAIL', 'miniBar 没接 miniBarBuilder 放播放器 UI'))
+    if 'HdsBarLayoutMode.VERTICAL' not in nav or 'barLayoutMode:' not in nav:
+        af += 1
+        issues.append(('AF', 'FAIL', 'miniBar 没设 barLayoutMode=VERTICAL 双行布局'))
+    if 'HdsBarStyle.EXPAND' not in nav or 'miniBarStyle:' not in nav:
+        af += 1
+        issues.append(('AF', 'FAIL', 'miniBar 没设 miniBarStyle=HdsBarStyle.EXPAND 初始展开'))
+    if 'onBarStyleChange:' not in nav:
+        af += 1
+        issues.append(('AF', 'FAIL', 'miniBar 没接 onBarStyleChange：感知不到展开/折叠态'))
+    # 流光：miniBar 内套 HdsFlowLight。
+    if 'HdsFlowLight' not in nav:
+        af += 1
+        issues.append(('AF', 'FAIL', 'MiniBar 没套 HdsFlowLight 流光特效'))
+    # 播放器 UI 要素：封面 + 播放/暂停 + 进播放页。
+    for ui in ('Cover(', 'sys.symbol.play_fill', 'enterPlayer()'):
+        if ui not in nav:
+            af += 1
+            issues.append(('AF', 'FAIL', f'miniBarBuilder 播放器 UI 缺 {ui}'))
+
+    # ── AG：HdsBarStyle.EXPAND/COLLAPSE 控制 + 一镜到底 ──
     ag = 0
-    if not re.search(r'const\s+FORM_SWITCH', shell):
+    if 'HdsTabsController' not in nav or 'controller: this.controller' not in nav:
         ag += 1
-        issues.append(('AG', 'FAIL', '没有形态分界常量：两层各写一个魔数，改了一边忘了另一边'))
-    if shell.count('.enabled(this.collapse()') < 2:
+        issues.append(('AG', 'FAIL', '没有 HdsTabsController 控制器'))
+    if 'applyMiniBarStyle' not in nav:
         ag += 1
-        issues.append(('AG', 'FAIL',
-                       '两个形态层没有都用 enabled 互锁：只写 hitTestBehavior(None) 只关自己，'
-                       '透明播放坞的子节点仍会抢走标签栏的点击'))
-    if not re.search(r'private\s+live\s*\(\s*\)\s*:\s*boolean', shell):
+        issues.append(('AG', 'FAIL', '没调 HdsTabsController.applyMiniBarStyle：无法通过 HdsBarStyle 主动控制展开收起'))
+    if 'navMiniBarCmd' not in nav or "AppStorage.setOrCreate('navMiniBarCmd'" not in index:
         ag += 1
-        issues.append(('AG', 'FAIL', 'MiniPlayer 没有 live() 守卫：紧凑版在展开态也能触发进播放页/切歌'))
-    elif not re.search(r'private\s+enter\s*\(\s*\)\s*:\s*void\s*\{\s*\n\s*if\s*\(!this\.live\(\)\)', shell):
+        issues.append(('AG', 'FAIL', '缺 navMiniBarCmd 控制通道：Index 无法驱动 MiniBar 展开收起'))
+    # 一镜到底：miniBar 与全屏页共用 playerGeomId。
+    if 'geometryTransition(this.playerGeomId)' not in nav:
         ag += 1
-        issues.append(('AG', 'FAIL', 'enter() 没走 live() 守卫：点标签会掉进播放页'))
-    # 外壳那条播放条高度收到 0 后仍在树上，clip 不裁命中
-    if not re.search(r'\.height\(58 \* \(1 - this\.barStage\([^)]*\)\)\)[\s\S]{0,240}?\.enabled\(', index):
+        issues.append(('AG', 'FAIL', 'miniBar 没绑 geometryTransition(playerGeomId)：一镜到底缺小形态端'))
+    if 'playerGeomId' not in index or 'setPlayerShow' not in index:
         ag += 1
-        issues.append(('AG', 'FAIL', '外壳播放条收到 0 高后没禁用：底栏上方留一条看不见的进播放页热区'))
+        issues.append(('AG', 'FAIL', 'Index 没维护 playerGeomId/setPlayerShow：一镜到底缺大形态端'))
+    # 二级页标准 push 保留。
+    if 'pushPathByName' not in index and 'pushPathByName' not in ''.join(src.values()):
+        ag += 1
+        issues.append(('AG', 'FAIL', '二级页没走 pushPathByName 标准 push'))
+
+    if bad == 0:
+        issues.append(('AE', 'PASS', '官方 HdsTabs 悬浮导航：三要素齐备 + BottomTabBarStyle(SymbolGlyphModifier) + 受控页码'))
+    if af == 0:
+        issues.append(('AF', 'PASS', 'barFloatingStyle 沉浸光感(hdsMaterial ADAPTIVE/ADAPTIVE) + MiniBar VERTICAL 双行 + 流光 + 播放器 UI'))
     if ag == 0:
-        issues.append(('AG', 'PASS', '两种形态按 FORM_SWITCH 互锁 enabled，透明层与 0 高层的子节点都不再抢点击'))
+        issues.append(('AG', 'PASS', 'HdsBarStyle.EXPAND 初始展开 + onBarStyleChange 感知 + HdsTabsController 控制 + miniBar↔全屏一镜到底'))
 
     # ── 我喜欢 / 最近播放的删除（AH）──
     # 这两个列表和「本地音乐 / 自建歌单」共用同一个详情页 and 同一套 swipeAction。
@@ -2709,66 +2584,45 @@ def check_tab_swipe(src):
     if ah == 0:
         issues.append(('AH', 'PASS', '我喜欢 / 最近播放都能左滑单条移除，整份清空走确认弹窗，且不会误改歌单'))
 
-    # ── 底栏的立体玻璃（AI）──
-    # 单色 rgba 平涂 + 一圈同色 0.8 描边是最省事的画法，但它是"磨砂塑料"：
-    # 每个像素都一样，眼睛拿不到厚度。这里卡住四件事，少一件就退回塑料板。
+    # ── 官方 HDS 悬浮栏材质（AI）──
+    # 新实现用 HdsGlass（半透明底 + 背景模糊 + 受光渐变 + 发丝边）做沉浸光感，
+    # HdsFlowLight 叠流光。断言按新材质结构校验，不再守旧「去光化实色」。
     ai = 0
-    consts = next((s for f, s in src.items() if f.endswith('common/Constants.ets')), '')
-    if not re.search(r'export function glassSurface\s*\(', consts):
+    glass_all = shell
+    # 材质四层：半透明底 / 背景模糊 / 受光渐变 / 发丝边 都要在。
+    if 'backgroundColor(withAlpha(' not in glass_all:
         ai += 1
-        issues.append(('AI', 'FAIL', '缺 glassSurface：表面回到单色 rgba，又变成一块平涂的雾'))
-    else:
-        # v2.52 墨栈：去光化后表面是「中性实色」，不再叠多段 rgba 青绿渐变。
-        # 断言从「必须有多段受光渐变」等价改写为「必须是同色两段实色、不含 rgba 染色」，
-        # 防止以后又把发光玻璃搬回来 —— 守断言跟着设计走，而非让设计迁就断言。
-        surface = re.search(r'export function glassSurface[\s\S]*?\n}', consts)
-        body = surface.group(0) if surface else ''
-        if 'return [[c, 0], [c, 1]];' not in body or 'rgba(' in body:
-            ai += 1
-            issues.append(('AI', 'FAIL', 'glassSurface 没收敛成中性同色实色：墨栈表面不该再有多段 rgba 渐变'))
-    if not re.search(r'export function glassDepth\s*\(', consts):
+        issues.append(('AI', 'FAIL', '悬浮材质缺半透明底色（withAlpha）：沉浸光感无从透出背景'))
+    if 'backgroundBlurStyle(' not in glass_all:
         ai += 1
-        issues.append(('AI', 'FAIL', '缺 glassDepth：下沿没有聚光，栏体看着像薄薄一张纸'))
-    # v2.52 墨栈：改 1vp 等宽发丝线，不再靠「下比上厚」伪造玻璃厚度
-    if not re.search(r"top:\s*1,\s*right:\s*1,\s*bottom:\s*1,\s*left:\s*1", consts):
+        issues.append(('AI', 'FAIL', '悬浮材质缺背景模糊'))
+    if glass_all.count('linearGradient(') < 2:
         ai += 1
-        issues.append(('AI', 'FAIL', 'glassEdgeWidth 不是 1vp 等宽发丝线：墨栈不靠不等厚描边表达厚度'))
-    # 底沿那道内高光必须在
-    if '底沿内高光' not in shell:
+        issues.append(('AI', 'FAIL', '悬浮材质受光渐变不足两处：HdsGlass 与 HdsFlowLight 都要有'))
+    if '.border({ width: 1' not in glass_all:
         ai += 1
-        issues.append(('AI', 'FAIL', '缺底沿内高光：玻璃下沿没有反射光，边缘显得是「描上去的线」'))
-    # 聚光带必须局限在下部，铺满整条就把整块刷白了
-    deps = re.findall(r'@Builder\s*\n\s*depthLayer\s*\(\)\s*\{[\s\S]{0,300}?\}', shell)
-    if len(deps) < 2:
+        issues.append(('AI', 'FAIL', '悬浮材质缺 1vp 发丝边：边缘会糊在背景里'))
+    # 流光扫光必须叠在 MiniBar 上（双行上行也有光感）。
+    mini_sec = glass_all[glass_all.find('export struct HdsMiniBar'):] if 'export struct HdsMiniBar' in glass_all else ''
+    if 'HdsGlass(' not in mini_sec or 'HdsFlowLight(' not in mini_sec:
         ai += 1
-        issues.append(('AI', 'FAIL', f'聚光层只挂在 {len(deps)} 处：标签栏和播放条是两块玻璃，都要有'))
-    elif any(not re.search(r"height\('2[0-9]%'\)", d) for d in deps):
+        issues.append(('AI', 'FAIL', 'MiniBar 没叠材质 + 流光层'))
+    # 材质层必须不吃触摸事件（否则会挡住页签/播放条的点击）。
+    if glass_all.count('HitTestMode.None') < 2:
         ai += 1
-        issues.append(('AI', 'FAIL', '聚光带没有限制在底部（应 20%~29% 高）：铺满会把整条刷成奶白'))
-    # 定义了 @Builder 不等于挂上了 —— 少挂一处，那块玻璃就没有厚度
-    if len(re.findall(r'this\.depthLayer\(\)', shell)) < len(deps):
+        issues.append(('AI', 'FAIL', '材质/流光层没设 HitTestMode.None：会挡住下层点击'))
+    # 悬浮胶囊参数常量必须集中在 HdsFloatingStyle（不散落魔数）。
+    if not re.search(r'export class HdsFloatingStyle', shell):
         ai += 1
-        issues.append(('AI', 'FAIL', '聚光层定义了但没挂全：有玻璃还是平的'))
-    # v2.52 墨栈：中性紧投影，offsetY 收到 2/4，不做离地浮起感
-    if 'offsetY: isDark ? 4 : 2' not in consts:
-        ai += 1
-        issues.append(('AI', 'FAIL', 'glassShadow 不是中性紧投影（offsetY 2/4）：墨栈不要离地浮起光晕'))
-    # 选中指示器要有自己的渐变+亮边，不能还是平涂
-    pill_block = re.search(r'\.borderRadius\(RADIUS\.pill\)([\s\S]{0,2200}?)\.position\(\{ x: this\.pillX', shell)
-    if not pill_block:
-        ai += 1
-        issues.append(('AI', 'FAIL', '找不到选中指示器：无法校验它的表面'))
-    elif 'linearGradient' not in pill_block.group(1):
-        ai += 1
-        issues.append(('AI', 'FAIL', '选中指示器还是平涂：和栏体糊成一片，看不出浮在栏面上'))
+        issues.append(('AI', 'FAIL', '悬浮胶囊参数没收敛到 HdsFloatingStyle'))
     if ai == 0:
-        issues.append(('AI', 'PASS',
-                       '底栏两层都是「渐变表面 + 上薄下厚四边 + 底沿内高光 + 向下投影」，选中片独立成一块小玻璃'))
+        issues.append(('AI', 'PASS', '悬浮栏与 MiniBar 都用半透明+模糊+受光渐变+发丝边，流光扫过，材质层不挡点击'))
 
     # ── 整页液态玻璃（AJ）──
     # 上一版只改了底栏两条，设置页 6 张卡、首页搜索框 + 快捷卡全是纯白，
     # 用户看到「整页没变化」。这一组卡住「覆盖到每一张卡」和「渐变真能画出来」。
     aj = 0
+    consts = next((s for f, s in src.items() if f.endswith('common/Constants.ets')), '')
     settings_page = next((s for f, s in src.items() if f.endswith('ui/pages/SettingsPage.ets')), '')
     home_page = next((s for f, s in src.items() if f.endswith('ui/pages/HomePage.ets')), '')
     if 'export function glassCardBase' not in consts:
@@ -2783,12 +2637,14 @@ def check_tab_swipe(src):
     if nh < 3:
         aj += 1
         issues.append(('AJ', 'FAIL', f'首页只有 {nh} 处套了玻璃（应 ≥3）：搜索框和四宫格还是纯白'))
-    # backgroundBlurStyle 和 linearGradient 抢同一个背景，是「改了没变化」的最大嫌疑
+    # HDS 沉浸光感故意同时用 backgroundBlurStyle + linearGradient：
+    #  blur 负责透出背景色彩，渐变负责受光厚度，二者是官方材质的互补两层。
+    # 只守一条：用了模糊就必须同时有渐变，否则整层是会「改了看不出」的纯模糊。
     shell_code = '\n'.join(ln for ln in shell.split('\n')
                            if not ln.lstrip().startswith('//') and not ln.lstrip().startswith('*'))
-    if '.backgroundBlurStyle(' in shell_code:
+    if '.backgroundBlurStyle(' in shell_code and 'linearGradient(' not in shell_code:
         aj += 1
-        issues.append(('AJ', 'FAIL', '底栏仍叠 backgroundBlurStyle：模糊材质可能整层盖掉线性渐变'))
+        issues.append(('AJ', 'FAIL', '悬浮材质用了模糊却没配受光渐变：会变成看不出变化的纯模糊层'))
     # v2.52 墨栈：表面中性实色，禁止青绿染色；用暖骨白 / 冷石墨双色板守护
     if 'rgba(210,240,238' in consts or 'rgba(206,236,232' in consts or '#FFFDFCFA' not in consts:
         aj += 1
@@ -2868,15 +2724,16 @@ def check_tab_swipe(src):
     # 「骨架屏 / 进度轨道 / 危险色这些语义元素没被误改」。
     al = 0
     pages = {}
-    for name in ('DownloadsPage', 'SheetDetailPage', 'PlayerPage',
+    for name in ('DownloadsPage', 'DataSettingsPage', 'SheetDetailPage', 'PlayerPage',
                  'SearchPage', 'ArtistPage', 'SourcesPage', 'RankBoardPage'):
         pages[name] = next((s for f, s in src.items()
                            if f.endswith('ui/pages/' + name + '.ets')), '')
     # 真正铺了玻璃的页面，各自至少这么多处 backgroundColor(glassCardBase(this.isDark))
-    # v2.55：下载页清掉不可达的多选状态机后少了「全选 / 删除」两枚玻璃胶囊，
-    # 玻璃底由 5 处降为 4 处 —— 降的是已删控件，不是白卡回潮。
-    need = {'DownloadsPage': 4, 'SheetDetailPage': 4, 'PlayerPage': 5,
-            'SearchPage': 4, 'ArtistPage': 1, 'SourcesPage': 6}
+    # v1.0 第四次返工：下载页三块设置卡整体搬去「数据管理」二级页，下载页玻璃底
+    # 4 → 2（行卡 + 操作按钮），数据页新增 4 处；总覆盖不减，不是白卡回潮。
+    # 2026-11-16：搜索页 idle「小提示」卡按用户要求删除，玻璃底 4 → 3
+    need = {'DownloadsPage': 2, 'DataSettingsPage': 4, 'SheetDetailPage': 4, 'PlayerPage': 5,
+            'SearchPage': 3, 'ArtistPage': 1, 'SourcesPage': 6}
     for name, lo in need.items():
         n = len(re.findall(r'\.backgroundColor\(glassCardBase\(this\.isDark\)\)', pages[name]))
         if n < lo:
@@ -2905,7 +2762,7 @@ def check_tab_swipe(src):
         al += 1
         issues.append(('AL', 'FAIL', '播放页深色沉浸底或背景层被改：歌词会被浅玻璃盖住'))
     # 语义色与功能性元素必须原样保留，不能为「统一」把它们一起刷成玻璃
-    if 'withAlpha(this.p().danger' not in pages['DownloadsPage'] + pages['SheetDetailPage']:
+    if 'this.p().danger' not in pages['DownloadsPage'] + pages['SheetDetailPage']:
         al += 1
         issues.append(('AL', 'FAIL', '清空 / 删除的危险色语义被抹掉：破坏性操作看不出来了'))
     if 'ProgressType.Linear' not in pages['DownloadsPage']:
@@ -3025,9 +2882,9 @@ def check_tab_swipe(src):
     if 'isCurrent()' not in common or 'toggleFav' not in common:
         am += 1
         issues.append(('AM', 'FAIL', '正在播放高亮或行内收藏被抹掉：统一 UI 不能把功能一起删了'))
-    if 'backgroundColor(this.p().danger)' not in downloads or "#FFFFFFFF" not in downloads:
+    if 'danger ? this.p().danger' not in downloads or '清除全部任务' not in downloads:
         am += 1
-        issues.append(('AM', 'FAIL', '下载页危险色语义被抹掉：左滑删除看不出是破坏性操作'))
+        issues.append(('AM', 'FAIL', '下载页危险色语义被抹掉：清除全部任务看不出是破坏性操作'))
     # 版本号
     if '"versionCode": 67' not in appjson or '"versionName": "1.0"' not in appjson:
         am += 1
@@ -3255,19 +3112,27 @@ def check_tab_swipe(src):
         aq += 1
         issues.append(('AQ', 'FAIL', '导入本地 / 下载全部两个入口被误删'))
 
-    # 3) 下载管理：只留清理动作
-    if "Text('清除')" not in downloads:
+    # 3) 下载管理（v1.0 第四次返工 + 2026-11-16）：队列操作统一到工具条，
+    #    长按多选（单选/全选）+ 单击暂停/开始 + 左滑删除 + 全部暂停/全部开始/清除全部任务
+    for kw, msg in (
+        ('全部暂停', '缺「全部暂停」'),
+        ('全部开始', '缺「全部开始」'),
+        ('清除全部任务', '缺「清除全部任务」'),
+        ('LongPressGesture(', '缺长按进入多选'),
+        ('SelectionBar({', '缺公共多选条（单选 / 全选）'),
+        ('App.get().downloads.toggle(id)', '单击没接暂停/开始'),
+        ('App.get().downloads.pauseAll()', '全部暂停没接下载器'),
+        ('App.get().downloads.resumeAll()', '全部开始没接下载器'),
+        ('App.get().downloads.clearAll()', '清除全部任务没接下载器'),
+        ('.swipeAction(', '缺左滑删除（2026-11-16 用户要求）'),
+        ('App.get().downloads.remove(id)', '左滑删除没接下载器'),
+    ):
+        if kw not in downloads:
+            aq += 1
+            issues.append(('AQ', 'FAIL', '下载管理 ' + msg))
+    if any(k in downloads for k in ('clearDone()', 'clearFailed()', '清空失败')):
         aq += 1
-        issues.append(('AQ', 'FAIL', '「清空已完成」没改成「清除」'))
-    if "Text('清空已完成')" in downloads:
-        aq += 1
-        issues.append(('AQ', 'FAIL', '还残留「清空已完成」旧文案'))
-    if "Text('选择')" in downloads:
-        aq += 1
-        issues.append(('AQ', 'FAIL', '下载管理还留着「选择」入口'))
-    if 'clearDone()' not in downloads or 'clearFailed()' not in downloads:
-        aq += 1
-        issues.append(('AQ', 'FAIL', '清理动作没接上 downloads.clearDone / clearFailed'))
+        issues.append(('AQ', 'FAIL', '下载管理还残留旧的清除 / 清空失败操作'))
 
     # 4) 设置页版本号可确认覆盖安装
     if "APP_VERSION: string = '1.0'" not in settings_page:
@@ -3369,7 +3234,7 @@ def check_tab_swipe(src):
 
     # ============ AS：统计 UI 已下线（v2.4 拆除确认） ============
     # v2.0~v2.3 的「音栈·驿站」看板 + 首页报告卡按需求整体拆除；
-    # 底层 PlayStats 与播放器埋点保留（见 AT/AU），只是不再参与任何界面。
+    # 底层 PlayStats 与播放器埋点已随 B1/B2 整体删除（由 CY 组守护）。
     stv = 0
     board_exists = any(f.endswith('ui/StationBoard.ets') for f in src)
     home = next((x for f, x in src.items() if f.endswith('ui/pages/HomePage.ets')), '')
@@ -3397,92 +3262,7 @@ def check_tab_swipe(src):
     if stv == 0:
         issues.append(('AS', 'PASS',
                        '「音栈·驿站」看板与首页报告卡已整体拆除，首页四宫格完好；'
-                       '统计底层 PlayStats 保留但不再参与界面'))
-
-    # ================= AT：真实收听统计层 =================
-    at = 0
-    stats = next((s for f, s in src.items() if f.endswith('core/PlayStats.ets')), '')
-    player = next((s for f, s in src.items() if f.endswith('core/Player.ets')), '')
-    app = next((s for f, s in src.items() if f.endswith('core/App.ets')), '')
-    consts = next((s for f, s in src.items() if f.endswith('common/Constants.ets')), '')
-    if not stats:
-        at += 1
-        issues.append(('AT', 'FAIL', '缺少 PlayStats.ets：没有真实收听统计层'))
-    else:
-        for kw in ('onProgress(timeMs: number, playing: boolean, song: SongInfo)',
-                   'delta > DELTA_LIMIT', 'delta <= 0', 'KEEP_HOURS',
-                   'MINUTES_IN_RANGE_FIXME' if False else 'minutesInRange(range: number)',
-                   'hourBuckets(range: number)', 'trendPoints(range: number)',
-                   'topArtist(): string', 'newSongsInRange(range: number)',
-                   'Library.get().getHistory()', 'Store.get().put(PrefKeys.PLAY_STATS'):
-            if kw not in stats:
-                at += 1
-                issues.append(('AT', 'FAIL', '统计层缺关键实现：' + kw))
-        if 'Math.random' in stats:
-            at += 1
-            issues.append(('AT', 'FAIL', '统计层出现 Math.random：数据不是真实测量'))
-        if 'setInterval' in stats:
-            at += 1
-            issues.append(('AT', 'FAIL', '统计层不该自己起定时器：累计必须跟着播放回调'))
-    if 'PlayStats.get().onSongStart(song)' not in player:
-        at += 1
-        issues.append(('AT', 'FAIL', 'Player 切歌没通知统计层：新歌判定会失效'))
-    if 'PlayStats.get().onProgress(time, this.playing, this.current)' not in player:
-        at += 1
-        issues.append(('AT', 'FAIL', 'Player 的 timeUpdate 没接真实进度累计'))
-    if 'PlayStats.get().flush()' not in player:
-        at += 1
-        issues.append(('AT', 'FAIL', '暂停时没落盘：最多可能丢 20 秒统计'))
-    if "static readonly PLAY_STATS" not in consts:
-        at += 1
-        issues.append(('AT', 'FAIL', 'Constants 没定义 PLAY_STATS 持久化键'))
-    # init 顺序：Store → Library → PlayStats → Player
-    i_store = app.find('await Store.get().init(context)')
-    i_lib = app.find('this.library.init()')
-    i_stats = app.find('PlayStats.get().init()')
-    i_player = app.find('this.player.init(context)')
-    if not (0 <= i_store < i_lib < i_stats < i_player):
-        at += 1
-        issues.append(('AT', 'FAIL', 'PlayStats.init 顺序不对：必须在 Library 之后、Player 之前'))
-    if at == 0:
-        issues.append(('AT', 'PASS',
-                       '真实统计链路闭合：timeUpdate 进度差累计（过滤 seek 跳变）、本地小时桶持久化、'
-                       '暂停立刻落盘、31 天小时桶 + 400 天日归档双窗口裁剪、旧播放历史并入已知歌曲'))
-
-    # ================= AU：月·回响数据地基（按日事件日志） =================
-    au = 0
-    stats_src = next((x for f, x in src.items() if f.endswith('core/PlayStats.ets')), '')
-    player_src = next((x for f, x in src.items() if f.endswith('core/Player.ets')), '')
-    if not stats_src:
-        au += 1
-        issues.append(('AU', 'FAIL', '缺少 PlayStats.ets'))
-    else:
-        for kw in ('interface DayStat', 'interface SongMeta', 'interface SongPlay',
-                   'KEEP_REPORT_DAYS: number = 400', 'hourMs: Array<[number, number]>',
-                   'onCompleted(song: SongInfo)', 'reportOf(year: number, month: number)',
-                   'availableMonths()', 'this.monthDayStart(year, month + 1)',
-                   'd.days instanceof Array ? d.days : []',
-                   'Math.min(100, Math.round(finished / plays * 100))'):
-            if kw not in stats_src:
-                au += 1
-                issues.append(('AU', 'FAIL', '报告数据地基缺关键实现：' + kw))
-        # 看板老接口必须还在，别为了做报告把驿站弄坏
-        for kw in ('minutesInRange(range: number)', 'trendPoints(range: number)',
-                   'hourBuckets(range: number)', 'topArtist(): string',
-                   'newSongsInRange(range: number)'):
-            if kw not in stats_src:
-                au += 1
-                issues.append(('AU', 'FAIL', '做报告时弄丢了看板接口：' + kw))
-        if 'Math.random' in stats_src or 'setInterval' in stats_src:
-            au += 1
-            issues.append(('AU', 'FAIL', '统计层出现随机函数或定时器：数据不是真实测量'))
-    if 'PlayStats.get().onCompleted(this.current)' not in player_src:
-        au += 1
-        issues.append(('AU', 'FAIL', 'Player 的 completed 回调没记完播：完播率会恒为 0'))
-    if au == 0:
-        issues.append(('AU', 'PASS',
-                       '按日播放事件日志保留 400 天（跨月可回看），切歌记次数 / 进度记时长 / '
-                       'completed 记完播，旧看板接口与 31 天小时桶原样保留'))
+                       '统计底层 PlayStats 与播放器埋点已整体清除'))
 
     # ============ AV：报告页与入口已下线（v2.4 拆除确认） ============
     av = 0
@@ -3567,6 +3347,78 @@ def check_tab_swipe(src):
 
     if bad == 0:
         issues.append(('AE', 'PASS', '一级页可横滑切页、指示器 1:1 跟手且与翻页动画同刻起步、收起时换成「圆按钮 + 播放胶囊」一排'))
+
+
+
+def check_native_immersive(src):
+    """AZ：对标华为音乐的原生特性 —— 液态玻璃/沉浸光感（uiMaterial）、
+    一镜到底（geometryTransition + animateTo）。守住在位，防止被改回纯自绘模拟。"""
+    index = next((v for f, v in src.items() if f.endswith('pages/Index.ets')), '')
+    shell = next((v for f, v in src.items() if f.endswith('ui/Shell.ets')), '')
+    try:
+        module_json = open(os.path.join(ROOT, 'entry/src/main/module.json5'), encoding='utf-8').read()
+    except OSError:
+        module_json = ''
+
+    az = 0
+
+    # 1) 应用级沉浸光感 metadata 必须在位且为 enable。
+    if '"ohos.arkui.UIMaterial.state"' not in module_json:
+        az += 1
+        issues.append(('AZ', 'FAIL', 'module.json5 缺 ohos.arkui.UIMaterial.state：应用级沉浸光感没开'))
+    elif '"value": "enable"' not in module_json:
+        az += 1
+        issues.append(('AZ', 'FAIL', 'UIMaterial.state 不是 enable：沉浸光感被关'))
+
+    # 2) Shell.ets 必须从 @kit.ArkUI import uiMaterial（真原生，不是自绘类冒充）。
+    if "import { uiMaterial } from '@kit.ArkUI'" not in shell:
+        az += 1
+        issues.append(('AZ', 'FAIL', 'Shell.ets 没 import uiMaterial：液态玻璃/沉浸光感没有走原生 API'))
+    # 3) 原生材质工厂：构造 ImmersiveMaterial + lightEffect 沉浸光感 + 设备分级降级。
+    if 'new uiMaterial.ImmersiveMaterial(' not in shell:
+        az += 1
+        issues.append(('AZ', 'FAIL', '没构造 uiMaterial.ImmersiveMaterial：悬浮胶囊不是原生液态玻璃'))
+    if 'lightEffect:' not in shell:
+        az += 1
+        issues.append(('AZ', 'FAIL', 'ImmersiveMaterial 没配 lightEffect：沉浸光感反馈没开'))
+    for kw in ('isImmersiveMaterialSupported', 'getGlobalMaterialLevel',
+               'ImmersiveStyle.THIN', 'ImmersiveStyle.THICK'):
+        if kw not in shell:
+            az += 1
+            issues.append(('AZ', 'FAIL', f'原生材质缺 {kw}：设备分级降级不完整'))
+    # 4) 官方 HdsTabs 重做：悬浮页签吃 hdsMaterial 的 systemMaterialEffect（ADAPTIVE 类型+等级），
+    #    在 HdsNav.ets 的 barFloatingStyle 里。旧的 HdsNativeMaterial.systemMaterial 路径保留在
+    #    Shell 供 HdsGlass 用，但悬浮胶囊已切到官方 systemMaterialEffect。
+    nav = next((s for f, s in src.items() if f.endswith('ui/HdsNav.ets')), '')
+    tab = (nav or '') + '\n' + (_func_body(index, 'tabContent') or '')
+    if 'systemMaterialEffect:' not in tab or 'hdsMaterial.MaterialType.ADAPTIVE' not in tab:
+        az += 1
+        issues.append(('AZ', 'FAIL', 'barFloatingStyle 没挂官方 systemMaterialEffect(ADAPTIVE)：悬浮页签没沉浸光感'))
+
+    # 5) 一镜到底：官方 animateTo 闭包 + geometryTransition 同 id + onFinish 清空。
+    sps = _func_body(index, 'setPlayerShow') or ''
+    if 'animateTo(' not in sps:
+        az += 1
+        issues.append(('AZ', 'FAIL', 'setPlayerShow 没放进 animateTo 闭包：一镜到底不会触发'))
+    if 'PLAYER_SHARED_ID' not in sps or 'this.playerGeomId' not in sps:
+        az += 1
+        issues.append(('AZ', 'FAIL', '一镜到底没绑定 geometryTransition 同 id'))
+    if 'onFinish' not in sps:
+        az += 1
+        issues.append(('AZ', 'FAIL', 'geometryTransition id 没在 onFinish 清空：快速连点会误触发共享转场'))
+    # 两个形态都必须绑同一个 id：大形态在 Index 全屏 Stack，小形态在 HdsNav 的
+    # miniBarBuilder 根 Stack（经 AppStorage['playerGeomId'] 跨组件传 id）。
+    nav_src = next((s for f, s in src.items() if f.endswith('ui/HdsNav.ets')), '')
+    geom_count = index.count('.geometryTransition(this.playerGeomId)') + nav_src.count('.geometryTransition(this.playerGeomId)')
+    if geom_count < 2:
+        az += 1
+        issues.append(('AZ', 'FAIL', '迷你条与全屏页没都绑 playerGeomId：一镜到底缺一端'))
+    if nav_src and "AppStorage.setOrCreate('playerGeomId'" not in index:
+        az += 1
+        issues.append(('AZ', 'FAIL', 'Index 没把 playerGeomId 写进 AppStorage：HdsNav 小形态拿不到共享 id'))
+
+    if az == 0:
+        issues.append(('AZ', 'PASS', '应用级沉浸光感 enable + 悬浮页签原生液态玻璃(ImmersiveMaterial/lightEffect,设备分级) + geometryTransition 一镜到底(animateTo 同 id) 均在位'))
 
 
 def check_smart_hunt(src):
@@ -3702,16 +3554,17 @@ def check_smart_hunt(src):
     # 折叠摘要也不能再把隐藏项算进「已开启」。
     opt = page.split('sourceSettings()', 1)[1].split('smartHuntRow() {', 1)[0] if 'sourceSettings()' in page else ''
     smry = page.split('private optionsSummary', 1)[1].split('\n  }', 1)[0] if 'private optionsSummary' in page else ''
-    if (not opt or 'if (!this.smartHunt)' not in opt or '} else {' not in opt or
-            'this.smartHuntHint()' not in opt or
+    # 2026-11-16：说明块整块删除，结构收成两个 if (!this.smartHunt) 包裹
+    if (not opt or opt.count('if (!this.smartHunt)') != 2 or
+            'this.smartHuntHint()' in opt or
             opt.count('this.preferOnlyRow()') != 1 or
             opt.count('this.downgradeRow()') != 1 or
             opt.count('this.fallbackRow()') != 1):
         bad += 1
         issues.append(('AX', 'FAIL', '音源页没有按懒人模式条件隐藏 3 项旧取链配置（关闭时须全部恢复）'))
-    if '已隐藏 3 项旧取链配置' not in page or '仍作用于歌词' not in page:
+    if '已隐藏 3 项旧取链配置' in page or '仍作用于歌词' in page or 'smartHuntHint' in page:
         bad += 1
-        issues.append(('AX', 'FAIL', '懒人模式隐藏项没有说明，或没讲清「只用首选音源」仍作用于歌词'))
+        issues.append(('AX', 'FAIL', '懒人模式说明块又回来了（用户要求删说明）'))
     if 'total += 3' not in smry or 'if (!this.smartHunt)' not in smry or "n.toString() + ' / '" not in smry:
         bad += 1
         issues.append(('AX', 'FAIL', '折叠头摘要仍固定按 7 项计数，会把已隐藏的 3 项算进已开启'))
@@ -3782,15 +3635,19 @@ def check_longpress_preload(src):
     if 'this.inflight.delete(gateKey)' not in res:
         bad += 1
         issues.append(('AZ', 'FAIL', '在途任务没在 finally 清理，后续取链会被永久短路'))
-    # 汽水：说明要写清楚为什么不支持，别让用户反复试。
-    # v2.72：导入面板搬到收藏页，这段说明也随之迁移，检查对象换成收藏页。
-    if '汽水音乐等平台暂不支持' not in fav or '扫码登录' not in fav:
+    # 汽水：2026-11-16 用户要求删掉界面说明，改守「解析器确实不认汽水」这条实现口径，
+    # 界面文案一出现即视为说明回潮。
+    if '汽水音乐等平台暂不支持' in fav:
         bad += 1
-        issues.append(('AZ', 'FAIL', '收藏页导入面板没说明汽水等平台为何不支持'))
+        issues.append(('AZ', 'FAIL', '收藏页导入面板的汽水说明又回来了（用户要求删说明）'))
+    imp_src = next((s for f, s in src.items() if f.endswith('core/PlaylistImport.ets')), '')
+    if 'qishui' in imp_src.lower():
+        bad += 1
+        issues.append(('AZ', 'FAIL', '歌单解析器居然认了汽水链接：没有官方公开接口，属于造能力'))
     if bad == 0:
         issues.append(('AZ', 'PASS',
                        '歌单收藏改为长按选中该张并进入多选（顶部「选择」已移除、批量删除保留），'
-                       '播放剩余 60 秒预取下一首且同 key 在途去重，导入面板写明汽水等平台不支持的原因'))
+                       '播放剩余 60 秒预取下一首且同 key 在途去重，导入面板不再挂说明文案、解析器不认汽水链接'))
 
 
 def check_fav_layout(src):
@@ -3877,7 +3734,7 @@ def check_download_swipe_stable(src):
     if 'struct DownloadTaskRow' not in dl:
         bad += 1
         issues.append(('BC', 'FAIL', '没有独立行组件 DownloadTaskRow，进度无法脱离 ForEach 实时刷新'))
-    if "DownloadTaskRow({ taskId: task.id })" not in dl:
+    if 'DownloadTaskRow({' not in dl or 'taskId: task.id' not in dl:
         bad += 1
         issues.append(('BC', 'FAIL', 'ListItem 没挂 DownloadTaskRow（或没传稳定 taskId）'))
     if "@StorageProp('downloadVersion') dlVersion" not in dl:
@@ -3886,9 +3743,9 @@ def check_download_swipe_stable(src):
     if 'this.dlVersion + 1' not in dl:
         bad += 1
         issues.append(('BC', 'FAIL', '行组件没在渲染路径读 dlVersion，订阅可能被编译器优化掉'))
-    if 'private task(): DownloadTask' not in dl or 'App.get().downloads.list()' not in dl:
+    if 'private task(): DownloadTask' not in dl or 'App.get().downloads.byId(this.taskId)' not in dl:
         bad += 1
-        issues.append(('BC', 'FAIL', '行组件没按 id 从 Downloader 实时数组取任务'))
+        issues.append(('BC', 'FAIL', '行组件没按 id 从 Downloader O(1) 实时取任务'))
     # ④ 页面层不再做「换引用 / 快照」这类无效 hack，也不再把进度塞进 @Builder
     for kw, msg in (
         ('private taskSig(', '还留着上一版换引用 hack 的 taskSig'),
@@ -3898,17 +3755,22 @@ def check_download_swipe_stable(src):
         if kw in dl:
             bad += 1
             issues.append(('BC', 'FAIL', '下载页 ' + msg))
-    # ⑤ 左滑删除入口本身不能被改没，且不依赖旧 task 快照判状态
-    if '.swipeAction(' not in dl or 'SwipeEdgeEffect.Spring' not in dl:
-        bad += 1
-        issues.append(('BC', 'FAIL', '左滑删除入口 / 弹性边缘效果被移除'))
-    if 'this.swipeDelete(task.id)' not in dl or 'private stillActive(id: string)' not in dl:
-        bad += 1
-        issues.append(('BC', 'FAIL', '左滑删除没按 id 取实时状态，删下载中任务文案会冻结'))
+    # ⑤ 三套手势必须同时在线：长按多选、单击暂停/开始、左滑删除。
+    #    2026-11-16 用户明确要求「在下载页再加一个左滑删除」，左滑入口正式回归
+    #    （第四次返工曾把它删掉，那时是「原来的都去掉」的口径）。
+    for kw, msg in (('LongPressGesture(', '缺长按进入多选'),
+                    ('.onClick(() =>', '行没接单击（暂停/开始/单选）'),
+                    ('SelectionBar({', '缺公共多选条'),
+                    ('.swipeAction(', '缺左滑删除入口'),
+                    ('SwipeEdgeEffect.Spring', '左滑没有弹性回弹')):
+        if kw not in dl:
+            bad += 1
+            issues.append(('BC', 'FAIL', '下载页 ' + msg))
     if bad == 0:
         issues.append(('BC', 'PASS',
-                       '下载行抽成独立组件 DownloadTaskRow：key 只认 id 不回弹，'
-                       '行组件自订阅 downloadVersion 并按 id 实时取数，进度实时且左滑展开态保持'))
+                       '下载行抽成独立组件 DownloadTaskRow：key 只认 id 不重建，'
+                       '行组件自订阅双信号并按 id O(1) 实时取数，进度实时；'
+                       '长按多选 + 单击暂停/开始 + 左滑删除三套手势并存'))
 
 
 def check_settings_subpages(src):
@@ -3970,9 +3832,8 @@ def check_settings_subpages(src):
     for label, text, opts in (
         ('播放设置页', play, ('音质偏好', '启动时自动续播', '记住播放进度',
                               '弱网预加载下一首', '忽略音频打断')),
-        ('外观页', appearance, ('跟随系统', '浅色', '深色', '字号', '显示翻译歌词',
-                                '光感四档已取消', '知道了')),
-        ('数据管理页', data, ('备份我的数据', '从备份恢复', '音源脚本（含脚本正文')),
+        ('外观页', appearance, ('跟随系统', '浅色', '深色', '字号', '显示翻译歌词')),
+        ('数据管理页', data, ('备份我的数据', '从备份恢复', 'doBackup()')),
     ):
         for kw in opts:
             if kw not in text:
@@ -4106,10 +3967,12 @@ def check_song_marquee(src):
         be += 1
         issues.append(('BE', 'FAIL', '下载状态行没保持 Ellipsis：进度每 300ms 变化会不停重置滚动'))
 
-    # v2.74：滚动速度统一降到 step 2；留着任一处 step 4 就是「改了 SongRow 忘了迷你条」
-    if all_ets.count('step: 2, fromStart: true') != 7 or 'step: 4' in all_ets:
+    # v2.74：滚动速度统一降到 step 2；留着任一处 step 4 就是「改了 SongRow 忘了迷你条」。
+    # HdsTabs 重做后 miniBarBuilder 迁到 HdsNav.ets，跑马灯分布变了，故只要求
+    # 「无 step:4 + 至少 6 处 step:2」，不再硬编码恰好 7 处。
+    if all_ets.count('step: 2, fromStart: true') < 6 or 'step: 4' in all_ets:
         be += 1
-        issues.append(('BE', 'FAIL', '跑马灯速度没统一到 step: 2（7 处）：仍有旧速度或漏改组件'))
+        issues.append(('BE', 'FAIL', '跑马灯速度没统一到 step: 2：仍有旧速度或漏改组件'))
 
     if be == 0:
         issues.append(('BE', 'PASS',
@@ -4217,7 +4080,7 @@ def check_data_subpage(src):
                     ('doBackup()', '缺 doBackup 实现'), ('doRestore()', '缺 doRestore 实现'),
                     ('Backup.exportTo(context)', '备份没走 Backup.exportTo'),
                     ('Backup.restoreFrom(context)', '恢复没走 Backup.restoreFrom'),
-                    ('音源脚本（含脚本正文', '缺备份范围说明'),
+                    ('this.doBackup();', '备份行没接 doBackup 实现'),
                     ('applyThemeMode(this.settings.themeMode(), context)',
                      '恢复成功后没应用主题（会「恢复了但深浅色没变」)')):
         if kw not in data:
@@ -5378,8 +5241,7 @@ def check_home_daily_rail_and_entries(src):
                     ("'homeRec_'", '分页歌曲行 ForEach 没带稳定 key'),
                     ('Cover({', '分组歌曲行没复用公共封面'),
                     ('App.get().play(this.songList, index)', '分组歌曲不能点播'),
-                    ("'每日推荐'", '每日推荐板块标题丢了'),
-                    ('左右滑动换组', '没提示用户可左右滑动换组')):
+                    ("'每日推荐'", '每日推荐板块标题丢了')):
         if kw not in section:
             bt += 1
             issues.append(('BT', 'FAIL', 'WyRecommendSection ' + msg))
@@ -5442,9 +5304,9 @@ def check_home_daily_rail_and_entries(src):
         if kw not in fav:
             bt += 1
             issues.append(('BT', 'FAIL', 'FavoriteSheetsPage ' + msg))
-    if '汽水音乐等平台暂不支持' not in fav:
+    if '汽水音乐等平台暂不支持' in fav:
         bt += 1
-        issues.append(('BT', 'FAIL', '收藏页导入面板丢了汽水不支持说明'))
+        issues.append(('BT', 'FAIL', '收藏页导入面板的汽水说明又回来了（用户要求删说明）'))
 
     # ⑤ 顶栏动作：公共组件默认关闭，且只有收藏页打开，其它页零外溢
     for kw, msg in (('@Prop showTrailing: boolean = false;', 'PageBar 缺默认关闭的开关'),
@@ -5767,7 +5629,7 @@ def check_glass_theme_removed(src):
       ② Constants 10 个取色函数签名去掉 theme 参数、只返回纸墨实色（不能误删纸墨链路）；
       ③ 外观页「风格」切换行（纸墨/青绿玻璃 Chip + applyGlassTheme）与两段说明文字删除，
          「主题」分组只剩「模式」三档；深浅色 applyThemeMode 链路完整；
-      ④ v2.56 光感迁移提示（lightNotice / 光感四档已取消）是独立功能，保留不误删；
+      ④ v2.56 光感迁移提示随 B5 清理一并删除，由 CY 组守护零残留；
       ⑤ Constants 品牌琥珀主色、四宫格配色不受牵连（由 BZ 组另行守护）。
     """
     ca = 0
@@ -5840,11 +5702,11 @@ def check_glass_theme_removed(src):
             if kw not in appearance:
                 ca += 1
                 issues.append(('CA', 'FAIL', '外观页 ' + msg))
-        # ④ lightNotice 提示条（v2.56 独立功能）保留
-        if '@State lightNotice: boolean = false;' not in appearance or \
-                '光感四档已取消' not in appearance:
+        # ④ lightNotice 提示条已随 B5 清理删除，这里反查「不许回潮」
+        if '@State lightNotice: boolean = false;' in appearance or \
+                '光感四档已取消' in appearance:
             ca += 1
-            issues.append(('CA', 'FAIL', 'v2.56 光感迁移提示条被误删（它是独立功能，不该随青绿引擎一起去掉）'))
+            issues.append(('CA', 'FAIL', 'v2.56 光感迁移提示条仍残留（本次清理已删除）'))
 
     # ⑤ Settings / App 不再读写广播主题
     for kw in ('glassTheme()', 'setGlassTheme', "AppStorage.setOrCreate('glassTheme'"):
@@ -5858,7 +5720,7 @@ def check_glass_theme_removed(src):
                        '10 个取色函数 theme 分发、LIQUID 色板与 liquid* 配方、落盘/广播/'
                        '首帧恢复、外观页「风格」切换行与两段说明全部清零；界面固定为纸墨，'
                        '取色函数只按 isDark 返回中性实色，深浅色「模式」三档链路完整，'
-                       'v2.56 光感迁移提示条保留，品牌主色不受牵连'))
+                       'v2.56 光感迁移提示条已删除，品牌主色不受牵连'))
 
 
 def check_qqkg_account_removed(src):
@@ -5889,8 +5751,16 @@ def check_qqkg_account_removed(src):
                  'QQ_COOKIE', 'KG_COOKIE', 'QQ_FAV_', 'KG_FAV_', 'QQ_UIN', 'KG_UID',
                  'qqNick', 'kgNick', 'qqFavSync', 'kgFavSync', 'qqLoginVersion',
                  'kgLoginVersion', 'reconcileQqKg', 'qqEngine', 'kgEngine',
-                 'v4_qq_', 'v4_kg_', 'fcg_qm_order_diss', 'gateway.kugou.com',
+                 'v4_qq_', 'v4_kg_', 'fcg_qm_order_diss',
                  'login-user.kugou.com', 'ptqrshow', 'qrcode_img')
+    # gateway.kugou.com 是通用网关，歌曲评论（CommentApi）也要用，不能一刀切。
+    # 但账号体系绝不能借它回潮：只允许 core/CommentApi.ets 里的 cmtlist 评论端点。
+    for f, text in src.items():
+        if 'gateway.kugou.com' in text:
+            if not f.endswith('core/CommentApi.ets') or 'mcomment/v1/cmtlist' not in text:
+                cd += 1
+                issues.append(('CD', 'FAIL',
+                               '%s 使用了酷狗网关但并非评论端点（账号体系疑似回潮）' % f))
     for f, text in src.items():
         for kw in banned_kw:
             if kw in text:
@@ -5965,7 +5835,11 @@ def check_download_audio_tags(src):
                     ("id3Text('TALB'", '没写专辑 TALB'),
                     ("id3Frame('USLT'", '没把歌词写进 USLT 帧'),
                     ('parseId3Frames', '没保留原有 ID3 帧（会丢封面）'),
-                    ('stripId3', '没剥离旧 ID3（重复写入会叠标签）')):
+                    # 第五次返工：stripId3（整文件 subarray）改成 id3End（只算旧 ID3
+                    # 结束位置 = 音频起点）。rewrite 从该 offset 流式搬音频，新头整体
+                    # 替代旧头，天然不叠标签；顺带不再把整份音频读进 JS 内存。
+                    ('id3End(', '没算出音频起点 / 旧 ID3 结束位置（重复写入会叠标签）'),
+                    ('readHead(', '缺只读标签区头部（整读整写大对象回来了）')):
         if kw not in tag:
             ce += 1
             issues.append(('CE', 'FAIL', 'AudioTag ' + msg))
@@ -5999,7 +5873,7 @@ def check_download_audio_tags(src):
             ce += 1
             issues.append(('CE', 'FAIL', 'AudioTag ' + msg))
     # Downloader 接入：落盘后先写元数据，歌词异步补齐（幂等二次 embed）
-    for kw, msg in (('AudioTag.embed(task.path, task.format, task.song,', '落盘后没调用内嵌'),
+    for kw, msg in (('AudioTag.embed(finalPath, task.format, task.song,', '落盘后没调用内嵌'),
                     ('embedLyricLater(', '缺歌词异步补齐'),
                     ('LyricRepo.get().get(song)', '没从歌词仓库取词'),
                     ('toLrcText(', '缺 LyricDoc→LRC 还原'),
@@ -6007,9 +5881,9 @@ def check_download_audio_tags(src):
         if kw not in dl:
             ce += 1
             issues.append(('CE', 'FAIL', 'Downloader ' + msg))
-    # 顺序：embed 必须在 copyToTarget 之后、标记 done 之前
-    copy_at = dl.find('this.copyToTarget(tempPath, fileName)')
-    embed_at = dl.find('AudioTag.embed(task.path, task.format, task.song,')
+    # 顺序：embed 必须在异步落盘之后、标记 done 之前
+    copy_at = dl.find('await this.moveToTarget(tempPath, fileName)')
+    embed_at = dl.find('AudioTag.embed(finalPath, task.format, task.song,')
     done_at = dl.find("task.status = 'done'", embed_at)
     if copy_at < 0 or embed_at < 0 or done_at < 0 or not (copy_at < embed_at < done_at):
         ce += 1
@@ -6028,6 +5902,1621 @@ def check_download_audio_tags(src):
                        '标签失败不影响下载结果'))
 
 
+def check_download_concurrency(src):
+    """CF：并行下载档位可设置、改完立即补位（v1.0）。
+
+    用户口径：一次下好几首，只有一个「下载中」、其余全「排队中」；
+    要一个「同时下载几首」的选项。排查结论：Downloader 把 maxRunning 写死 2，
+    既没有设置入口，pump() 又只在入队 / 任务完成时触发。本组锁死四件事：
+      ① 常量 + PrefKey + Settings 读写（带 1~5 clamp，脏值兜底）；
+      ② Downloader 不再硬编码 2，init 读回、setConcurrency 落盘后立即 pump；
+      ③ 下载管理页有档位调节且接 setConcurrency，改完不重启即生效
+        （v1.0c 起改为一行式「− 数字 +」步进器 + 收紧卡片，旧 5 档 Chip 禁止复活）；
+      ④ 不动取消 / 重试 / 清理 / 单文件内嵌歌词等既有链路。
+    """
+    cf = 0
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    const = get('common/Constants.ets')
+    settings = get('core/Settings.ets')
+    dl = get('core/Downloader.ets')
+    # v1.0 第四次返工：档位卡片随红圈标记内容整体搬到「数据管理」二级页
+    page = get('ui/pages/DataSettingsPage.ets')
+
+    if not all((const, settings, dl, page)):
+        issues.append(('CF', 'WARN', '没找齐并发下载相关文件，跳过检查'))
+        return
+
+    # ① 常量 / PrefKey / Settings 读写 + clamp
+    for kw, msg in (("DOWNLOAD_CONCURRENCY: string = 'v4_download_concurrency'", '缺 DOWNLOAD_CONCURRENCY PrefKey'),
+                    ('DOWNLOAD_CONCURRENCY_MIN: number = 1', '缺 MIN=1'),
+                    ('DOWNLOAD_CONCURRENCY_MAX: number = 5', '缺 MAX=5'),
+                    ('DOWNLOAD_CONCURRENCY_DEFAULT: number = 3', '缺 DEFAULT=3')):
+        if kw not in const:
+            cf += 1
+            issues.append(('CF', 'FAIL', 'Constants ' + msg))
+    for kw, msg in (('downloadConcurrency(): number', '缺 downloadConcurrency() 读'),
+                    ('setDownloadConcurrency(value: number): void', '缺 setDownloadConcurrency() 写'),
+                    ('PrefKeys.DOWNLOAD_CONCURRENCY', 'Settings 没用到并发 PrefKey'),
+                    ('if (!(n >= DOWNLOAD_CONCURRENCY_MIN))', '读没做下界 clamp / NaN 兜底'),
+                    ('if (n > DOWNLOAD_CONCURRENCY_MAX)', '读没做上界 clamp')):
+        if kw not in settings:
+            cf += 1
+            issues.append(('CF', 'FAIL', 'Settings ' + msg))
+
+    # ② Downloader：不再写死 2，init 读回，setConcurrency 立即 pump
+    if 'private maxRunning: number = 2' in dl:
+        cf += 1
+        issues.append(('CF', 'FAIL', 'Downloader 仍把并发上限写死为 2'))
+    if 'private maxRunning: number = DOWNLOAD_CONCURRENCY_DEFAULT' not in dl:
+        cf += 1
+        issues.append(('CF', 'FAIL', 'Downloader 字段初值没用 DEFAULT 常量'))
+    if 'this.maxRunning = Settings.get().downloadConcurrency();' not in dl:
+        cf += 1
+        issues.append(('CF', 'FAIL', 'init() 没从设置读回并发档位（重启后会退回默认）'))
+    if 'while (this.running < this.maxRunning && this.queue.length > 0)' not in dl:
+        cf += 1
+        issues.append(('CF', 'FAIL', 'pump() 没按 maxRunning 判断并发'))
+    # setConcurrency 函数体必须落盘 + 立即 pump + 广播
+    sc = dl.find('setConcurrency(value: number): void')
+    sc_end = dl.find('\n  }', sc)
+    sc_body = dl[sc:sc_end] if sc >= 0 and sc_end > sc else ''
+    if not sc_body:
+        cf += 1
+        issues.append(('CF', 'FAIL', 'Downloader 缺 setConcurrency()'))
+    else:
+        for kw, msg in (('Settings.get().setDownloadConcurrency(value)', '没落盘'),
+                        ('this.maxRunning = Settings.get().downloadConcurrency();', '没更新运行时上限'),
+                        ('this.pump();', '改完没立即补位启动排队任务（要等下一首完成才生效）'),
+                        ('this.notify();', '改完没广播，页面选中态不会刷新')):
+            if kw not in sc_body:
+                cf += 1
+                issues.append(('CF', 'FAIL', 'setConcurrency ' + msg))
+    if 'concurrency(): number' not in dl:
+        cf += 1
+        issues.append(('CF', 'FAIL', 'Downloader 缺 concurrency() 供页面读取当前档位'))
+
+    # ③ 页面：一行式「− 数字 +」步进器（v1.0c：旧横排 5 档 Chip 整卡太大，已废除）
+    for kw, msg in (('concurrencyCard()', '缺并发档位卡片'),
+                    ('@State concurrency: number = DOWNLOAD_CONCURRENCY_DEFAULT', '缺 @State concurrency'),
+                    ('this.concurrency = App.get().downloads.concurrency();', 'refresh 没同步当前档位'),
+                    ('App.get().downloads.setConcurrency(n);', '点步进器没接 setConcurrency'),
+                    ('applyConcurrency(this.concurrency - 1)', '缺左侧「−」减一'),
+                    ('applyConcurrency(this.concurrency + 1)', '缺右侧「+」加一'),
+                    ('DOWNLOAD_CONCURRENCY_MIN', '页面没引用下界常量（边界置灰 / 越界 return）'),
+                    ('DOWNLOAD_CONCURRENCY_MAX', '页面没引用上界常量（边界置灰 / 越界 return）'),
+                    ("this.concurrency.toString() + ' 首'", '卡片没显示当前档位数字')):
+        if kw not in page:
+            cf += 1
+            issues.append(('CF', 'FAIL', 'DataSettingsPage ' + msg))
+    # 反向：旧版横排 5 档 Chip 不得复活（用户反馈「同时下载占用太大」）
+    if 'Chip({' in page or re.search(r"text: '\d', active: this\.concurrency", page):
+        cf += 1
+        issues.append(('CF', 'FAIL', '并行卡片又出现 5 档 Chip（旧版整卡过大）'))
+    if 'padding({ left: 14, right: 10, top: 9, bottom: 9 })' not in page:
+        cf += 1
+        issues.append(('CF', 'FAIL', '并发卡片没收紧内边距（仍是 padding 16 的大卡）'))
+    if 'this.concurrencyCard()' not in page:
+        cf += 1
+        issues.append(('CF', 'FAIL', 'build() 没把并发卡片插进页面'))
+
+    # ④ 既有链路仍在（别为加设置把老功能改坏）
+    for kw, msg in (('AudioTag.embed(finalPath, task.format, task.song,', '内嵌元数据链路被破坏'),
+                    ('embedLyricLater(', '歌词内嵌链路被破坏'),
+                    ('cancel(id: string): void', '取消下载被破坏'),
+                    ('retry(id: string): void', '重试下载被破坏')):
+        if kw not in dl:
+            cf += 1
+            issues.append(('CF', 'FAIL', 'Downloader ' + msg))
+
+    if cf == 0:
+        issues.append(('CF', 'PASS',
+                       '并行下载可设 1~5 首（默认 3）：Constants 常量 + PrefKey、Settings 读写带 clamp，'
+                       'Downloader 取消写死 2 改从 init 读回，setConcurrency 落盘后立即 pump 让排队任务补位；'
+                       '数据管理页就地放一行式「− 数字 +」步进器（旧 5 档 Chip 已废除、卡片收窄），'
+                       '点按不重启即生效；取消/重试/单文件内嵌歌词链路均保留'))
+
+
+def check_ignore_interrupt(src):
+    """CG：忽略音频打断（v1.0d）——跨应用共存靠 AudioSession 混音。
+
+    用户反馈：开关打开后，其它应用一播放本应用照样暂停。两条根因：
+      ① AVPlayer.audioInterruptMode 只决定「同一应用内多条音频流」的焦点归属，
+        管不了跨应用；PAUSE / STOP 是 INTERRUPT_FORCE（系统强制执行），
+        在 audioInterrupt 回调里 return 根本挡不住。
+      ② 两个属性被设在 createAVPlayer() 后的 idle 状态。官方要求
+        audioRendererInfo 在 initialized（首次 prepare() 前）、
+        audioInterruptMode 在 prepared（首次 play() 前），idle 设置不生效。
+    修复：AudioSession CONCURRENCY_MIX_WITH_OTHERS + 会话释放后重激活 +
+    强制打断节流续播兜底。本组锁死这些点，防止退回「回调里 return」的旧写法。
+    """
+    cg = 0
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    player = get('core/Player.ets')
+    page = get('ui/pages/PlaySettingsPage.ets')
+    if not player or not page:
+        issues.append(('CG', 'WARN', '没找齐 Player / PlaySettingsPage，跳过忽略打断检查'))
+        return
+
+    # ① AudioSession 混音策略全链路
+    for kw, msg in (('getSessionManager()', '没拿到 AudioSessionManager'),
+                    ('CONCURRENCY_MIX_WITH_OTHERS', '没用混音共存策略'),
+                    ('activateAudioSession(', '没激活音频会话'),
+                    ('deactivateAudioSession(', '关开关时没释放会话'),
+                    ('isAudioSessionActivated()', '激活前没做幂等判断'),
+                    ('audioSessionDeactivated', '没监听会话被系统释放（超时后策略会失效）'),
+                    ('syncAudioSession()', '缺按开关同步会话的方法'),
+                    ('resumeFromForcedInterrupt', '缺系统强制打断后的续播兜底'),
+                    ('AUDIO_SESSION_SCENE_MEDIA', '没设置媒体会话场景')):
+        if kw not in player:
+            cg += 1
+            issues.append(('CG', 'FAIL', 'Player ' + msg))
+
+    # ② 属性设置时机：两个属性都不得留在 idle 块，且顺序必须正确
+    prep = player.find('private async prepare(')
+    cb = player.find("player.on('stateChange'", prep)
+    idle_block = player[prep:cb] if prep >= 0 and cb > prep else ''
+    if 'player.audioRendererInfo =' in idle_block or 'player.audioInterruptMode =' in idle_block:
+        cg += 1
+        issues.append(('CG', 'FAIL', '又在 idle 状态设置音频属性（官方要求 initialized / prepared）'))
+    i0 = player.find("if (state === 'initialized')", cb)
+    i1 = player.find("} else if (state === 'prepared') {", i0)
+    i2 = player.find("} else if (state === 'playing') {", i1)
+    init_body = player[i0:i1] if i0 >= 0 and i1 > i0 else ''
+    prep_body = player[i1:i2] if i1 >= 0 and i2 > i1 else ''
+    if 'player.audioRendererInfo =' not in init_body:
+        cg += 1
+        issues.append(('CG', 'FAIL', 'audioRendererInfo 没放进 initialized 分支'))
+    elif init_body.find('player.audioRendererInfo =') > init_body.find('player.prepare()'):
+        cg += 1
+        issues.append(('CG', 'FAIL', 'audioRendererInfo 没在首次 prepare() 之前设置'))
+    if 'player.audioInterruptMode =' not in prep_body:
+        cg += 1
+        issues.append(('CG', 'FAIL', 'audioInterruptMode 没放进 prepared 分支'))
+    elif prep_body.find('player.audioInterruptMode =') > prep_body.find('player.play()'):
+        cg += 1
+        issues.append(('CG', 'FAIL', 'audioInterruptMode 没在首次 play() 之前设置'))
+    if 'this.syncAudioSession();' not in prep_body:
+        cg += 1
+        issues.append(('CG', 'FAIL', '起播前没确认混音会话仍激活'))
+
+    # ③ 旧写法与接线
+    if 'if (token !== this.token || Settings.get().ignoreInterrupt())' in player:
+        cg += 1
+        issues.append(('CG', 'FAIL', '又退回「回调里直接 return」的旧写法（FORCE 打断挡不住）'))
+    if 'App.get().player.applyInterruptMode();' not in page:
+        cg += 1
+        issues.append(('CG', 'FAIL', '播放设置页开关没接 applyInterruptMode'))
+    ap = player.find('applyInterruptMode(): void')
+    ap_end = player.find('\n  }', ap)
+    ap_body = player[ap:ap_end] if ap >= 0 and ap_end > ap else ''
+    if 'syncAudioSession' not in ap_body:
+        cg += 1
+        issues.append(('CG', 'FAIL', '开关切换时没同步 AudioSession 策略'))
+
+    if cg == 0:
+        issues.append(('CG', 'PASS',
+                       '忽略音频打断改用 AudioSession 混音共存：开→MIX_WITH_OTHERS 激活、关→释放，'
+                       '会话被系统释放后自动重激活；属性改到 initialized（prepare 前）/ prepared（play 前）'
+                       '合法状态；强制打断有节流续播兜底，旧「回调 return」写法已禁止'))
+
+
+def check_b_cleanup(src):
+    """CY：B1/B2/B5/B6 四项清理守护（源码 + 断言成对）。
+
+    删除项：PlayStats 整链 + 月报 API（B1/B2）、光感四档迁移提示（B5）、
+    qq/kg 中性空态（B6）。同时锁死 B11 光感符号壳与同步聚合链路不被误删。
+    读 load_raw() 磁盘原文，注释里的残留同样算数。
+    """
+    cy = 0
+    raw = load_raw()
+    all_ets = '\n'.join(s for f, s in raw.items() if f.endswith('.ets'))
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in raw.items() if f.endswith(suffix)), '')
+
+    hub = get('core/FavSyncHub.ets')
+    consts = get('common/Constants.ets')
+    settings_core = get('core/Settings.ets')
+
+    # ① B1/B2 统计层整链清零
+    if any(f.endswith('core/PlayStats.ets') for f in raw):
+        cy += 1
+        issues.append(('CY', 'FAIL', 'PlayStats.ets 仍存在：统计层没删干净'))
+    for kw, msg in (('PlayStats', '仍残留 PlayStats 引用'),
+                    ('PLAY_STATS', '仍残留统计持久化键'),
+                    ('v4_play_stats', '仍残留统计落盘 key 字面量'),
+                    ('MonthReport', '仍残留月报类型'),
+                    ('reportOf(', '仍残留月报查询 API'),
+                    ('onSongStart(', '仍残留切歌埋点'),
+                    ('onCompleted(this.current)', '仍残留完播埋点')):
+        if kw in all_ets:
+            cy += 1
+            issues.append(('CY', 'FAIL', 'B1/B2 ' + msg + '：' + kw))
+
+    # ② B5 光感迁移提示整链清零
+    for kw, msg in (('LIGHT_SENSE_NOTICE', '仍残留提示独立键'),
+                    ('v4_light_sense_notice', '仍残留提示落盘 key'),
+                    ('lightSenseNoticeSeen', '仍残留提示标记读写'),
+                    ('needLightNotice', '仍残留提示条件方法'),
+                    ('lightNotice', '仍残留一次性提示状态'),
+                    ('光感四档已取消', '仍残留提示文案'),
+                    ("Text('知道了')", '仍残留提示关闭按钮')):
+        if kw in all_ets:
+            cy += 1
+            issues.append(('CY', 'FAIL', 'B5 ' + msg + '：' + kw))
+
+    # ③ B6 中性空态清零，但统一状态聚合与实时对账必须保留
+    for kw, msg in (("scope !== 'all'", '仍残留 qq/kg 早退分支'),
+                    ('const empty: FavSyncStatus', '仍残留中性空态构造'),
+                    ('中性空态', '仍残留中性空态注释')):
+        if kw in hub:
+            cy += 1
+            issues.append(('CY', 'FAIL', 'B6 ' + msg + '：' + kw))
+    for kw, msg in (('status(scope: string): FavSyncStatus', '统一状态聚合被误删'),
+                    ('label(scope: string): string', '状态条文案被误删'),
+                    ('toastText(scope: string): string', '同步结论被误删'),
+                    ('startForegroundSync()', '前台实时对账被误删'),
+                    ('WyFavSync.get().reconcile()', '网易云对账链路被误删')):
+        if kw not in hub:
+            cy += 1
+            issues.append(('CY', 'FAIL', '清理时 ' + msg + '：' + kw))
+
+    # ④ B11 光感符号壳与玻璃四件套必须完好
+    for kw, msg in (('static readonly LIGHT_SENSE:', 'LIGHT_SENSE 键被误删'),
+                    ('export function lightSense(level: number', 'lightSense 参数化函数被误删')):
+        if kw not in consts:
+            cy += 1
+            issues.append(('CY', 'FAIL', 'B11 ' + msg))
+    if 'getNumber(PrefKeys.LIGHT_SENSE, 3)' not in settings_core:
+        cy += 1
+        issues.append(('CY', 'FAIL', 'B11 lightSense() 默认值 3 被改'))
+    if "@StorageProp('lightSense') lightLevel: number = 3" not in all_ets or \
+            'glassSurface(this.isDark, this.lightLevel)' not in all_ets:
+        cy += 1
+        issues.append(('CY', 'FAIL', 'B11 光感订阅 / 玻璃四件套订阅被误删'))
+
+    if cy == 0:
+        issues.append(('CY', 'PASS',
+                       'B1/B2/B5/B6 清理闭合：PlayStats 整链与月报 API、光感迁移提示、'
+                       'qq/kg 中性空态全部清零；B11 光感符号壳与同步状态聚合 / 实时对账完好'))
+
+
+def check_song_comments(src):
+    """CZ：歌曲评论（v1.0 · 2026-11-14）。
+
+    锁死八件事，防止后续改动把「能看评论」退化成假功能或撞坏既有约束：
+      ① 四个实测可用平台（wy/tx/kw/kg）都有分派与官方匿名端点；
+      ② tx mid→songid、kg hash→audio_id 两个 id 桥接不能省，省了就是空列表；
+      ③ 咪咕（mg）评论接口已下线且需登录 → 直接隐藏入口，不显示假空白；
+      ④ 评论是 bindSheet 组件（panel=8），不是新路由 —— AC 组锁的 12 个名字一个都不许加；
+      ⑤ 失败一律显示真实原因 + 重试，不允许占位评论 / 拿空数组冒充成功；
+      ⑥ 切歌靠 songKey @Watch 重拉，不残留上一首歌的评论；
+      ⑦ 真机回归两条：QQ null 字段 typeof 兜底、酷狗 POST 空 body 改 GET；
+      ⑧ 无限滚动：热评批次置顶后自动接续最新流（热评接口无第二页），
+         UI 用 onReachEnd 触底追加，禁止退回翻页按钮。
+    """
+    cz = 0
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    api = get('core/CommentApi.ets')
+    panel = get('ui/pages/CommentPanel.ets')
+    player = get('ui/pages/PlayerPage.ets')
+    index = get('pages/Index.ets')
+
+    for text, label in ((api, 'core/CommentApi.ets'),
+                        (panel, 'ui/pages/CommentPanel.ets')):
+        if not text:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论模块缺失：' + label))
+
+    # ① 四平台端点 + 分派
+    for kw, msg in (
+        ("R_SO_4_", '网易云评论端点'),
+        ('fcg_global_comment_h5.fcg', 'QQ 音乐评论端点'),
+        ('comment.kuwo.cn/com.s', '酷我评论端点'),
+        ('mcomment/v1/cmtlist', '酷狗评论端点'),
+        ("song.source === 'wy'", 'wy 分派'),
+        ("song.source === 'tx'", 'tx 分派'),
+        ("song.source === 'kw'", 'kw 分派'),
+        ('return await kgComments(song, safePage)', 'kg 分派'),
+    ):
+        if kw not in api:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论数据层缺 ' + msg))
+
+    # ② 两个 id 桥接 + 酷狗原生签名
+    for kw, msg in (
+        ('client_search_cp', 'QQ mid→songid 反查'),
+        ('getSongInfo.php?cmd=playInfo', '酷狗 hash→audio_id 桥接'),
+        ('cryptoFramework.createMd(\'MD5\')', '原生 MD5 签名能力'),
+        ('kgAndroidSign(params)', '酷狗 Android 签名'),
+    ):
+        if kw not in api:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论数据层缺 ' + msg))
+
+    # ③ 咪咕隐藏入口：白名单里不能有 mg，播放页必须按 commentSupported 条件渲染
+    if "return s === 'wy' || s === 'tx' || s === 'kw' || s === 'kg';" not in api:
+        cz += 1
+        issues.append(('CZ', 'FAIL', 'commentSupported 白名单不对：咪咕必须排除'))
+    if 'if (commentSupported(this.song)) {' not in player:
+        cz += 1
+        issues.append(('CZ', 'FAIL', '播放页没有按平台条件隐藏评论入口'))
+
+    # ④ 不新增路由
+    if "name === 'comment'" in index or "name === 'comments'" in index or \
+            'CommentPanel()' in index:
+        cz += 1
+        issues.append(('CZ', 'FAIL', '评论误注册为路由（AC 组路由白名单只能有 12 个名字）'))
+    for kw, msg in (('commentButton()', '评论按钮'),
+                    ('this.panel = 8;', 'panel=8 触发'),
+                    ('this.panel === 8', 'panel=8 分支'),
+                    ('CommentPanel({', '评论面板挂载'),
+                    ('this.panel === 8\n        ? SheetSize.LARGE', 'LARGE 半屏高度')):
+        if kw not in player:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '播放页缺 ' + msg))
+
+    # ⑤ 失败如实展示，不做假数据
+    for kw, msg in (('failPage(platform,', '失败返回真实原因'),
+                    ('p.supported = false;', '不支持平台标记'),
+                    ('不伪造空列表', '设计边界声明')):
+        if kw not in api:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论数据层缺 ' + msg))
+    for kw, msg in (('this.result.error', '真实错误展示'),
+                    ('Text(\'重试\')', '重试按钮'),
+                    ('@Watch(\'onSongKeyChange\')', '切歌重拉')):
+        if kw not in panel:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论面板缺 ' + msg))
+
+    # ⑦ 真机回归（2026-11-14）两条，防止改回去：
+    #    QQ 评论字段大量为 null，str/num 只判 undefined 会让 .length 抛 TypeError；
+    #    酷狗 POST 空 body 在 HarmonyOS NetworkKit 报 Parameter error，必须走 GET。
+    for kw, msg in (("typeof v === 'string'", '字符串字段 null 兜底'),
+                    ("typeof v === 'number'", '数字字段 null 兜底'),
+                    ('newRaws.length > 0', 'QQ 热评为空时降级'),
+                    ('getJson<KgCmtResp>', '酷狗评论走 GET')):
+        if kw not in api:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论数据层缺 ' + msg))
+    for kw, msg in (("v === undefined ? '' : v", '旧 str 写法（null 会漏）'),
+                    ("options.method = 'POST'", '酷狗 POST 空 body（真机 Parameter error）')):
+        if kw in api:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论数据层残留 ' + msg))
+
+    # ⑧ 无限滚动（2026-11-14）：实测热评接口没有第二页（wy hotComments 固定 15 条、
+    #    tx cmd=6 翻页参数无效），必须热评批次置顶后自动接续最新流；
+    #    UI 必须触底追加而非翻页按钮，且不允许退回「上一页 / 下一页」。
+    for kw, msg in (('const hotBatch: boolean', '热评批次标记'),
+                    ('? (total > 0 && list.length > 0)', 'wy 热评批次放行续刷'),
+                    ('? newRaws.length > 0', 'tx 热评批次放行续刷'),
+                    ('hotBatch ? 1 : (hot ? page - 1 : page)', 'kw 热评接最新流'),
+                    ('wyFetch(url)', 'wy 限流 -462 自动重试')):
+        if kw not in api:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论数据层缺 ' + msg))
+    if '!hot &&' in api:
+        cz += 1
+        issues.append(('CZ', 'FAIL', '评论数据层残留热评 hasMore 一刀切（热评将无法续刷）'))
+    for kw, msg in (('.onReachEnd(', '触底加载事件'),
+                    ('this.loadMore()', '触底加载入口'),
+                    ('loadingMore', '追加中状态'),
+                    ('this.result.comments.slice()', '追加而非替换'),
+                    ('this.seen[key] !== true', '按 id 去重'),
+                    ('added === 0', '无新增时停止，防死循环')):
+        if kw not in panel:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论面板缺 ' + msg))
+    for kw, msg in (('上一页', '翻页按钮'),
+                    ('下一页', '翻页按钮'),
+                    ('pager()', '旧翻页控件'),
+                    ('goPage(', '旧翻页方法')):
+        if kw in panel:
+            cz += 1
+            issues.append(('CZ', 'FAIL', '评论面板残留 ' + msg))
+
+    if cz == 0:
+        issues.append(('CZ', 'PASS',
+                       '歌曲评论：wy/tx/kw/kg 四平台官方匿名端点直连（含 tx mid→id、'
+                       'kg hash→audio_id 桥接与原生 MD5 签名）；mg 隐藏入口不造假；'
+                       '播放页底排第 5 按钮 + bindSheet panel=8 组件，零新增路由；'
+                       '失败显真实原因可重试、切歌按 songKey 重拉；'
+                       '真机回归：null 字段 typeof 兜底、QQ 热评降级、酷狗走 GET；'
+                       '无限滚动：热评批次置顶后自动接续最新流、onReachEnd 触底追加、'
+                       '按 id 去重、无翻页按钮'))
+
+
+def check_auto_download(src):
+    """DA：失败面板音源名对比度 + 听够 2/3 自动下载（v1.0 · 2026-11-14）。
+
+    锁死六件事：
+      ① 失败面板卡片内文字跟卡片主题取色 —— p() 恒深色 + 浅色主题白卡 = 白底白字，
+         真机上音源名几乎看不见（用户截图实测）；
+      ② 音源名加字号 / 字重，压过下面的错误原因；
+      ③ 开关有 PrefKey / Settings 读写 / 备份白名单，默认关；
+      ④ Player 在 timeUpdate 按 2/3 阈值触发，每首一次、切歌复位，不直接依赖 App；
+      ⑤ App 侧执行器做开关判断 + 本地歌 / 已下载 / 已在队列去重，不弹错误卡片；
+      ⑥ 下载页有开关卡片且即时落盘；不新增路由（12 个路由名由 CG 组锁）。
+    """
+    da = 0
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    const = get('common/Constants.ets')
+    settings = get('core/Settings.ets')
+    backup = get('core/Backup.ets')
+    player = get('core/Player.ets')
+    app = get('core/App.ets')
+    # v1.0 第四次返工：自动下载开关随红圈标记内容搬到「数据管理」二级页
+    page = get('ui/pages/DataSettingsPage.ets')
+    player_page = get('ui/pages/PlayerPage.ets')
+
+    if not all((const, settings, backup, player, app, page, player_page)):
+        issues.append(('DA', 'WARN', '没找齐自动下载 / 失败面板相关文件，跳过检查'))
+        return
+
+    # ①② 对比度：音源名所在的那一块必须跟 isDark 取色，不得用恒深色的 p()
+    if 'Text(item.name)' in player_page and 'Text(item.text)' in player_page:
+        name_block = player_page.split('Text(item.name)')[1].split('Text(item.text)')[0]
+        for kw, msg in (('palette(this.isDark).text', '音源名没跟卡片主题取色'),
+                        ('.fontWeight(FontWeight.Medium)', '音源名没加字重')):
+            if kw not in name_block:
+                da += 1
+                issues.append(('DA', 'FAIL', '失败面板 ' + msg))
+        if 'this.p().text' in name_block or 'this.p().primary' in name_block:
+            da += 1
+            issues.append(('DA', 'FAIL', '失败面板卡片内残留 p() 恒深色（白底白字会复现）'))
+    else:
+        da += 1
+        issues.append(('DA', 'FAIL', '失败面板音源名 / 错误原因结构被改动，无法定位对比度修法'))
+    if 'palette(this.isDark).text2' not in player_page:
+        da += 1
+        issues.append(('DA', 'FAIL', '失败面板错误原因没跟卡片主题取色'))
+
+    # ③ 持久化与默认关闭
+    if "AUTO_DOWNLOAD_ON_PLAY: string = 'v4_auto_download_on_play'" not in const:
+        da += 1
+        issues.append(('DA', 'FAIL', 'Constants 缺 AUTO_DOWNLOAD_ON_PLAY PrefKey'))
+    for kw, msg in (('getBool(PrefKeys.AUTO_DOWNLOAD_ON_PLAY, false)', '开关没默认关'),
+                    ('setAutoDownloadOnPlay(value: boolean): void', '缺 setter')):
+        if kw not in settings:
+            da += 1
+            issues.append(('DA', 'FAIL', 'Settings ' + msg))
+    if 'PrefKeys.AUTO_DOWNLOAD_ON_PLAY' not in backup:
+        da += 1
+        issues.append(('DA', 'FAIL', '备份白名单没纳入自动下载开关'))
+
+    # ④ 播放触发
+    for kw, msg in (('AUTO_DOWNLOAD_RATIO: number = 2 / 3', '缺 2/3 阈值常量'),
+                    ('time >= this.duration * AUTO_DOWNLOAD_RATIO', 'timeUpdate 没按 2/3 触发'),
+                    ('this.autoDownloadDone = false;', '切歌没复位 autoDownloadDone'),
+                    ('setAutoDownloadHandler(handler:', '缺回调注入'),
+                    ('this.autoDownloadHandler(this.current)', '没把当前歌曲交给执行器')):
+        if kw not in player:
+            da += 1
+            issues.append(('DA', 'FAIL', 'Player ' + msg))
+
+    # ⑤ App 侧去重与入队
+    for kw, msg in (('setAutoDownloadHandler((song: SongInfo): void =>', '缺执行器注入'),
+                    ('!Settings.get().autoDownloadOnPlay()', '执行器没判断开关'),
+                    ("song.source === 'local'", '没跳过本地歌'),
+                    ('this.hasDownload(song)', '没做已下载 / 队列去重'),
+                    ('this.downloads.enqueue(song)', '没入队')):
+        if kw not in app:
+            da += 1
+            issues.append(('DA', 'FAIL', 'App ' + msg))
+
+    # ⑥ 数据管理页开关（v1.0 第四次返工从下载管理页搬来）
+    for kw, msg in (('autoDownloadCard()', '缺开关卡片'),
+                    ('Toggle({ type: ToggleType.Switch, isOn: this.autoDownload })', '缺 Toggle'),
+                    ('this.settings.setAutoDownloadOnPlay(on)', '开关没落盘'),
+                    ('@State autoDownload: boolean = false;', '开关默认没关')):
+        if kw not in page:
+            da += 1
+            issues.append(('DA', 'FAIL', '下载页 ' + msg))
+
+    if da == 0:
+        issues.append(('DA', 'PASS',
+                       '失败面板音源名跟卡片主题取色（消除白底白字）；'
+                       '听够 2/3 自动下载：PrefKey/Settings/备份齐全且默认关、'
+                       'Player 按进度阈值每首一次、App 侧开关+去重入队、下载页开关即时生效'))
+
+
+def check_mf_capabilities(src):
+    """DB：MusicFree 音源「能力扩展 + 音源要求的东西」（v1.0 · 2026-11-14）。
+
+    用户口径：扩的是「音源能跑起来的能力」，不是「App 多几个内容页」；
+    不跟现有工程冲突，本质仍是听歌 / 下载。锁死六件事：
+      ① 运行时补齐真实插件高频导出方法（导入歌单 / 专辑 / 榜单 / 推荐 / 单曲信息）；
+      ② 能力清单按插件实际导出生成，未导出不列；actions 协议三值不许被污染；
+      ③ env.getUserVariables() 读真实值且是 getter（保存即生效），不再写死 {}；
+      ④ 用户变量按音源隔离落本机 KV、装载前注入、含凭证不进备份白名单；
+      ⑤ 落点只在音源管理页既有 sheet，零新增路由，结果只进播放 / 下载出口；
+      ⑥ webdav / pako 仍如实标注不支持，不伪造能力；既有 detectKind 规则不动。
+    """
+    db = 0
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    raw = os.path.join(ROOT, 'entry/src/main/resources/rawfile')
+    rt_path = os.path.join(raw, 'vendor', 'mf_runtime.js')
+    br_path = os.path.join(raw, 'lx_bridge.html')
+    rt = open(rt_path, encoding='utf-8').read() if os.path.isfile(rt_path) else ''
+    br = open(br_path, encoding='utf-8').read() if os.path.isfile(br_path) else ''
+    repo = get('core/SourceRepo.ets')
+    runner = get('core/LxRunner.ets')
+    page = get('ui/pages/SourcesPage.ets')
+    const = get('common/Constants.ets')
+    models = get('common/Models.ets')
+    index = get('pages/Index.ets')
+    backup = get('core/Backup.ets')
+
+    if not all((rt, br, repo, runner, page, const, models, index)):
+        issues.append(('DB', 'WARN', '没找齐音源能力扩展相关文件，跳过检查'))
+        return
+
+    # ① 八类扩展能力分派必须真的调用到对应插件方法
+    for kw, msg in (
+        ("action === 'albumSearch'", '缺 album 类型搜索分派'),
+        ("action === 'albumInfo'", '缺 getAlbumInfo 专辑详情分派'),
+        ("action === 'topLists'", '缺 getTopLists 榜单列表分派'),
+        ("action === 'topListDetail'", '缺 getTopListDetail 榜单歌曲分派'),
+        ("action === 'recommendTags'", '缺 getRecommendSheetTags 推荐标签分派'),
+        ("action === 'recommendSheets'", '缺推荐歌单分派'),
+        ("action === 'musicInfo'", '缺 getMusicInfo 单曲信息分派'),
+        ("action === 'importSheet'", '缺 importMusicSheet 导入歌单分派（最高频能力）'),
+        ('function listOf(res)', '缺多形态返回归一（数组 / musicList / data / songs）'),
+        ('function flattenTopLists(res, sid)', '缺榜单分组拍平'),
+        ("getRecommendSheetsByTag", '没兼容 getRecommendSheetsByTag 变体'),
+    ):
+        if kw not in rt:
+            db += 1
+            issues.append(('DB', 'FAIL', 'mf_runtime.js ' + msg))
+
+    # ② 能力声明按实际导出；actions 三值不许被污染
+    for kw, msg in (
+        ('var capabilities = [];', '缺按实际导出的能力清单'),
+        ('var variableDefs = [];', '缺用户变量声明回传'),
+        ('capabilities: capabilities,', '能力清单没回传给宿主'),
+        ('variableDefs: variableDefs,', '变量声明没回传给宿主'),
+        ("var actions = ['musicUrl'];", 'actions 协议被改动，会污染取链 / 取词判定'),
+    ):
+        if kw not in rt:
+            db += 1
+            issues.append(('DB', 'FAIL', 'mf_runtime.js ' + msg))
+    if 'hasFn(\'importMusicSheet\')' not in rt:
+        db += 1
+        issues.append(('DB', 'FAIL', '能力清单没按「是否真的导出」判定，会伪造能力'))
+
+    # ③ env 真实值 + getter + 插件真实读取的字段
+    if 'getUserVariables: function () { return {}; }' in rt:
+        db += 1
+        issues.append(('DB', 'FAIL', 'env.getUserVariables 仍写死 {}：要 cookie/token 的插件全部残废'))
+    for kw, msg in (
+        ('getUserVariables: readUserVars', 'env.getUserVariables 不是 getter，保存配置不能即时生效'),
+        ('userVariables: readUserVars()', '没兼容直读 env.userVariables 的插件'),
+        ('AG_DEBUG: false', '没补 env.AG_DEBUG（22 个真实插件会读）'),
+        ('function readUserVars()', '缺宿主变量注入的读取函数'),
+    ):
+        if kw not in rt:
+            db += 1
+            issues.append(('DB', 'FAIL', 'mf_runtime.js ' + msg))
+
+    # ④ 变量注入 / 持久化 / 不外带
+    for kw, msg in (
+        ('__setUserVars: function (instId, varsJson)', '桥接页缺独立变量注入入口'),
+        ('getUserVariables: function () { return userVarsByInst[instId] || {}; }',
+         '桥接页没把变量接到运行时 env'),
+        ('userVarsByInst = {};', '__reset 没清变量（会串源）'),
+    ):
+        if kw not in br:
+            db += 1
+            issues.append(('DB', 'FAIL', 'lx_bridge.html ' + msg))
+    for kw, msg in (
+        ('__setUserVars(', 'LxRunner.load 没在装载前注入用户变量'),
+        ('async setUserVars(instId: string, varsJson: string): Promise<void>',
+         '缺保存配置后即时注入的独立方法（不许改 load 签名）'),
+        ('onMeta: ((instId: string, meta: string) => void) | null = null',
+         '缺能力 / 变量声明回传回调'),
+    ):
+        if kw not in runner:
+            db += 1
+            issues.append(('DB', 'FAIL', 'LxRunner ' + msg))
+    for kw, msg in (
+        ('mfMetaOf(instId: string): MfMeta', '缺能力声明查询（且与静态 mfMeta 同名冲突要避开）'),
+        ('mfUserVars(instId: string): string', '缺按音源隔离的用户变量读取'),
+        ('async saveMfUserVars(', '缺用户变量保存 + 即时注入'),
+        ('await this.injectUserVars(item.id);', 'loadOne / loadAll 没在装载前注入变量'),
+        ('async probeMf(', '缺扩展能力统一试跑（结果归一到播放 / 下载出口）'),
+        ("this.mfMetaOf(instId).capabilities.indexOf(action) < 0",
+         '试跑没按声明过滤，会向不支持的插件发无效请求'),
+    ):
+        if kw not in repo:
+            db += 1
+            issues.append(('DB', 'FAIL', 'SourceRepo ' + msg))
+    if "MF_USER_VARS: string = 'v4_mf_user_vars_'" not in const:
+        db += 1
+        issues.append(('DB', 'FAIL', 'Constants 缺按音源隔离的用户变量 PrefKey 前缀'))
+    if 'PrefKeys.MF_USER_VARS' in backup:
+        db += 1
+        issues.append(('DB', 'FAIL', '用户变量含凭证却进了备份白名单，换机会串账号 / 泄露 token'))
+    for kw, msg in (('export interface MfMeta', '缺能力声明模型'),
+                    ('export interface MfVarDef', '缺用户变量声明模型'),
+                    ('export interface MfProbeResult', '缺试跑结果模型')):
+        if kw not in models:
+            db += 1
+            issues.append(('DB', 'FAIL', 'Models ' + msg))
+
+    # ⑤ 落点只在音源页既有 sheet，零新增路由，结果只进播放 / 下载
+    for kw, msg in (
+        ('configSheet()', '缺音源页配置与能力浮层'),
+        ('this.cfgMode)', 'menuSheet 没挂配置形态'),
+        ('openConfig(this.menuTarget)', '菜单缺配置入口'),
+        ('isMusicFree(this.menuTarget)', '配置入口没限定 MusicFree 源（洛雪脚本没有这些协议字段）'),
+        ('saveCfgVars()', '缺保存用户变量动作'),
+        ('runCfgProbe()', '缺能力试跑动作'),
+        ('App.get().playAndOpen(this.cfgSongs.slice(), 0)', '试跑结果没走既有播放出口'),
+        # v1.0 性能修复：试跑「下载全部」由逐首 enqueue 改为整批 enqueueAll，
+        # 这里只按前缀校验「确实走 Downloader 下载出口」，不再锁死单首方法名，
+        # 检查意图不变；批量收口的强度由 DC 组专门锁死。
+        ('App.get().downloads.enqueue', '试跑结果没走既有下载出口'),
+        ('InputType.Password', '密码类变量没用密码输入'),
+    ):
+        if kw not in page:
+            db += 1
+            issues.append(('DB', 'FAIL', 'SourcesPage ' + msg))
+    # 内容页一行不许动：这些能力不得灌进发现 / 榜单 / 专辑 / 搜索的数据源
+    for suffix in ('ui/pages/DiscoverPage.ets', 'ui/pages/RankBoardPage.ets',
+                   'ui/pages/SheetDetailPage.ets', 'ui/pages/SearchPage.ets'):
+        body = get(suffix)
+        if body and ('probeMf(' in body or 'mfUserVars(' in body or 'configSheet(' in body):
+            db += 1
+            issues.append(('DB', 'FAIL', suffix + ' 被接入扩展能力，跟现有内容页冲突了'))
+    # 路由表：锁定本次改动前的 12 个名字，不许因为扩展能力新增任何路由
+    route_names = set(re.findall(r"name === '([A-Za-z][\w]*)'", index))
+    baseline = {'sheet', 'rankboard', 'discoverSection', 'search', 'artist', 'downloads',
+                'sources', 'playSettings', 'appearanceSettings', 'dataSettings',
+                'wyAccount', 'favoriteSheets'}
+    added = route_names - baseline
+    if added:
+        db += 1
+        issues.append(('DB', 'FAIL', '路由表出现新名字：' + ','.join(sorted(added))))
+
+    # ⑥ 不伪造能力：webdav / pako 继续如实标注
+    for kw, msg in (("notSupported('webdav（网盘客户端）')", 'webdav 被伪装成可用'),
+                    ("notSupported('pako（DEFLATE 压缩）')", 'pako 被伪装成可用')):
+        if kw not in rt:
+            db += 1
+            issues.append(('DB', 'FAIL', 'mf_runtime.js ' + msg))
+
+    if db == 0:
+        issues.append(('DB', 'PASS',
+                       '音源能力扩展：8 类高频能力真实分派（导入歌单/专辑/榜单/推荐/单曲信息）、'
+                       '能力按实际导出声明不伪造、env.getUserVariables 接真实值且保存即时生效、'
+                       '变量按音源隔离落本机且不进备份、装载前注入；'
+                       '落点只在音源页既有 sheet，结果只进播放/下载出口，零新增路由、内容页零改动，'
+                       'webdav/pako 仍如实标注不支持'))
+
+
+def check_download_batch(src):
+    """DC：批量下载入队「单次收口」（v1.0 · 2026-11-15）。
+
+    事故：用户一次添加几十 / 上百首下载「巨卡但不卡死」。
+    根因：enqueueAll 只是 for 循环逐首 enqueue，每首都做
+      persist() → JSON.stringify(整个队列) + Store.put → flushSync() 同步刷盘（UI 线程）
+      notify()  → AppStorage 全局广播，所有订阅页 / 列表行全量重绘
+      pump()，再叠加 unshift 头插与线性查重的 O(n²)。
+    删除路径 removeMany() 早就「只落盘一次、广播一次」，添加路径漏了。
+
+    锁死八件事：
+      ① enqueueAll 内 persist / notify / pump 各只出现一次；
+      ② Set 索引一次查重 + 一次整体前插，不再逐首 unshift / 线性 find；
+      ③ enqueue 单首委托 enqueueAll（一条实现，不分叉，单曲行为等价）；
+      ④ 两个批量入口（歌单下载全部 / 音源试跑下载全部）整批走 enqueueAll；
+      ⑤ 单首下载入口（自动下载 / 播放页 / 歌曲菜单 / 歌曲行）仍走 enqueue，不误改；
+      ⑥ Store 同步落盘底座、removeMany、取消 / 重试 / 清理 / 并发档位不回退；
+      ⑦ 本地已下载过滤（hasDownload）语义保留，不因批量化丢失；
+      ⑧ 零新增路由、内容页零改动，不跟现有工程冲突。
+    """
+    dc = 0
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    dl = get('core/Downloader.ets')
+    sheet = get('ui/pages/SheetDetailPage.ets')
+    sources = get('ui/pages/SourcesPage.ets')
+    app = get('core/App.ets')
+    player = get('ui/pages/PlayerPage.ets')
+    menu = get('ui/SongMenu.ets')
+    common = get('ui/Common.ets')
+    store = get('core/Store.ets')
+    index = get('pages/Index.ets')
+    if not all((dl, sheet, sources, app, player, menu, common, store, index)):
+        issues.append(('DC', 'WARN', '没找齐批量下载相关文件，跳过检查'))
+        return
+
+    # ① 只截取 enqueueAll 方法体，锁死「三个副作用各一次」
+    m = re.search(r'enqueueAll\(songs:[^)]*\): number \{([\s\S]*?)\n  \}', dl)
+    body = m.group(1) if m else ''
+    if not body:
+        dc += 1
+        issues.append(('DC', 'FAIL', 'Downloader.enqueueAll 找不到方法体'))
+    else:
+        # 只统计方法体内的直接调用，注释里提到不算（用具体调用串、非纯关键字）
+        for call, label in (('this.persist();', '落盘 persist'),
+                            ('this.notify();', '广播 notify'),
+                            ('this.pump();', '补位 pump')):
+            n = body.count(call)
+            if n != 1:
+                dc += 1
+                issues.append(('DC', 'FAIL',
+                               f'enqueueAll 里 {label} 出现 {n} 次（必须恰好 1 次，逐首回退会 >1）'))
+        # ② Set 索引查重 + 一次整体前插
+        for kw, msg in (('const seen: Set<string> = new Set<string>();', '缺一次性 Set 查重索引'),
+                        ('seen.has(song.id)', '没用 Set 查重'),
+                        ('seen.add(song.id)', '批内重复没拦'),
+                        ('head.concat(this.tasks)', '缺一次整体前插（仍在逐首 unshift）')):
+            if kw not in body:
+                dc += 1
+                issues.append(('DC', 'FAIL', 'enqueueAll ' + msg))
+        if 'this.tasks.unshift' in body:
+            dc += 1
+            issues.append(('DC', 'FAIL', 'enqueueAll 仍在逐首 unshift 头插，O(n²) 没消除'))
+        # 方法体内不许再逐首调 enqueue（防回退成 for + enqueue）
+        if re.search(r'for\s*\([\s\S]*?\)\s*\{[\s\S]*?this\.enqueue\(', body):
+            dc += 1
+            issues.append(('DC', 'FAIL', 'enqueueAll 又回退成循环逐首 enqueue'))
+
+    # ③ 单首委托批量：一条实现，不分叉
+    if 'this.enqueueAll([song], quality);' not in dl:
+        dc += 1
+        issues.append(('DC', 'FAIL', 'enqueue() 没委托 enqueueAll，单曲 / 批量两条实现会分叉'))
+    if 'enqueue(song: SongInfo, quality: string = \'\'): void' not in dl:
+        dc += 1
+        issues.append(('DC', 'FAIL', 'enqueue() 签名被改，单首调用点可能失配'))
+
+    # ④ 两个批量入口整批走 enqueueAll，且不再有逐首 enqueue 循环
+    if 'App.get().downloads.enqueueAll(pending)' not in sheet:
+        dc += 1
+        issues.append(('DC', 'FAIL', '歌单「下载全部」没整批走 enqueueAll'))
+    if 'App.get().downloads.enqueueAll(this.cfgSongs)' not in sources:
+        dc += 1
+        issues.append(('DC', 'FAIL', '音源试跑「下载全部」没整批走 enqueueAll'))
+    for name, text in (('SheetDetailPage', sheet), ('SourcesPage', sources)):
+        if re.search(r'for\s*\([\s\S]{0,200}?\)\s*\{[\s\S]{0,200}?downloads\.enqueue\(', text):
+            dc += 1
+            issues.append(('DC', 'FAIL', name + ' 仍残留逐首 enqueue 循环（批量会卡）'))
+
+    # ⑤ 单首下载入口保持原样，不被误改成批量
+    for name, text, kw in (
+        ('自动下载', app, 'this.downloads.enqueue(song)'),
+        ('播放页', player, 'App.get().downloads.enqueue(this.song)'),
+        ('歌曲菜单', menu, 'App.get().downloads.enqueue(this.song)'),
+        ('歌曲行', common, 'App.get().downloads.enqueue(this.song)'),
+    ):
+        if kw not in text:
+            dc += 1
+            issues.append(('DC', 'FAIL', name + ' 的单首 enqueue 出口被改动'))
+
+    # ⑥ 既有链路不回退
+    for kw, msg in (('this.pref.putSync(key, value);', 'Store.put 同步写入底座被改'),
+                    ('this.persist();', 'Store.put 没当场落盘'),
+                    ('[Store] 写入失败 ', 'Store.put 没兜住 putSync 异常（值超限会崩）'),
+                    ('flushSync();', 'Store.flushSync 同步刷盘被改')):
+        if kw not in store:
+            dc += 1
+            issues.append(('DC', 'FAIL', msg))
+    for kw, msg in (('removeMany(ids: string[]): number', '批量删除收口 removeMany 被破坏'),
+                    ('cancel(id: string): void', '取消下载被破坏'),
+                    ('retry(id: string): void', '重试下载被破坏'),
+                    ('clearDone(): void', '清理已完成被破坏'),
+                    ('clearFailed(): void', '清理失败被破坏'),
+                    ('while (this.running < this.maxRunning && this.queue.length > 0)', '并发 pump 被破坏')):
+        if kw not in dl:
+            dc += 1
+            issues.append(('DC', 'FAIL', 'Downloader ' + msg))
+
+    # ⑦ 本地 / 已下载过滤语义保留
+    if 'App.get().hasDownload(song)' not in sheet:
+        dc += 1
+        issues.append(('DC', 'FAIL', '批量化把「本地已下载不再下」的过滤弄丢了'))
+
+    # ⑧ 零新增路由（与 DB 组同一基线）
+    route_names = set(re.findall(r"name === '([A-Za-z][\w]*)'", index))
+    baseline = {'sheet', 'rankboard', 'discoverSection', 'search', 'artist', 'downloads',
+                'sources', 'playSettings', 'appearanceSettings', 'dataSettings',
+                'wyAccount', 'favoriteSheets'}
+    if route_names - baseline:
+        dc += 1
+        issues.append(('DC', 'FAIL', '路由表出现新名字：' + ','.join(sorted(route_names - baseline))))
+
+    if dc == 0:
+        issues.append(('DC', 'PASS',
+                       '批量下载入队单次收口：enqueueAll 一次 Set 查重 + 一次整体前插，'
+                       'persist / notify / pump 各一次（同步刷盘与全局广播从 N 次降到 1 次）；'
+                       '单首 enqueue 委托批量路径不分叉；两个批量入口整批入队；'
+                       '单首出口 / Store 落盘底座 / removeMany / 取消重试清理 / 并发档位 / 本地过滤均不回退；'
+                       '零新增路由、内容页零改动'))
+
+
+def check_download_render(src):
+    """DD：下载「稳态」渲染收口（v1.0 · 2026-11-15）。
+
+    事故：装机实测「队列 234 首、下载中滚动长列表」仍掉帧（用户录屏佐证）。
+    上一轮 DC 修的是「批量入队那一瞬间」，这次是「稳态高频刷新」，两条不同链路。
+    根因：progress 每 300ms 走 notify() 把「进度」混进全局 downloadVersion，
+      ① 页面级 refresh() 被进度触发 → ForEach 全量 diff + 4 个 O(n) 统计；
+      ② 234 个行组件 + 首页 / 歌单 / 播放 / 所有歌曲行全部被唤醒重绘；
+      ③ lastNotify 是每个任务各自的闭包局部变量，3 并发 ≈ 10 次/秒；
+      ④ 行 task() 按 id 线性遍历 list()，build() 里调十几次 → O(n²)。
+
+    锁死八件事：
+      ① 进度 / 状态拆两条信号：notifyProgress 只 set downloadProgress，
+         notify() 仍 set downloadVersion，二者互不串；
+      ② 节流提到 Downloader 实例级 lastProgressNotify，全局 300ms，并发不放大；
+      ③ progress 回调只调 notifyProgress，不再调 notify / 不再用局部 lastNotify；
+      ④ byId 升级 public + Map O(1) 索引，集合结构变化标脏、长度兜底；
+      ⑤ 行组件 task()/liveOf() 走 byId O(1)，不再线性遍历 list()；
+      ⑥ 行组件只 running 行读 progressVersion 挂高频依赖，其它行不订阅；
+      ⑦ 高频信号只出现在 Downloader / DownloadsPage，零扩散到内容页；
+      ⑧ BC 组锁的 ForEach 稳定 key / 独立行组件 / 左滑不回弹不回退，
+         Store 同步落盘底座 / removeMany 不回退，零新增路由、内容页零改动。
+    """
+    dd = 0
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    dl = get('core/Downloader.ets')
+    dpage = get('ui/pages/DownloadsPage.ets')
+    store = get('core/Store.ets')
+    index = get('pages/Index.ets')
+    if not all((dl, dpage, store, index)):
+        issues.append(('DD', 'WARN', '没找齐下载渲染相关文件，跳过检查'))
+        return
+
+    # ① 进度 / 状态信号分离
+    mn = re.search(r'private notifyProgress\(\): void \{([\s\S]*?)\n  \}', dl)
+    nbody = mn.group(1) if mn else ''
+    if not nbody:
+        dd += 1
+        issues.append(('DD', 'FAIL', '找不到独立的高频进度广播 notifyProgress()'))
+    else:
+        if "setOrCreate('downloadProgress'" not in nbody:
+            dd += 1
+            issues.append(('DD', 'FAIL', 'notifyProgress 没广播独立 downloadProgress 信号'))
+        if 'downloadVersion' in nbody:
+            dd += 1
+            issues.append(('DD', 'FAIL', 'notifyProgress 又碰了 downloadVersion，进度会重新唤醒页面级 refresh'))
+        if 'this.notify()' in nbody:
+            dd += 1
+            issues.append(('DD', 'FAIL', 'notifyProgress 内部又调了 notify()，信号没拆干净'))
+    if "AppStorage.setOrCreate('downloadVersion', Date.now());" not in dl:
+        dd += 1
+        issues.append(('DD', 'FAIL', '低频 notify() 不再广播 downloadVersion，状态刷新失效'))
+
+    # ② 实例级全局 300ms 节流
+    if 'private lastProgressNotify: number = 0;' not in dl:
+        dd += 1
+        issues.append(('DD', 'FAIL', '缺实例级 lastProgressNotify，节流仍会按并发放大'))
+    if 'if (now - this.lastProgressNotify < 300)' not in nbody:
+        dd += 1
+        issues.append(('DD', 'FAIL', 'notifyProgress 没做全局 300ms 节流'))
+
+    # ③ progress 回调只走高频信号
+    mp = re.search(r"live\.on\('progress'[\s\S]*?live\.on\('complete'", dl)
+    pseg = mp.group(0) if mp else ''
+    if not pseg:
+        dd += 1
+        issues.append(('DD', 'FAIL', '找不到系统下载 progress 回调'))
+    else:
+        if 'this.notifyProgress();' not in pseg:
+            dd += 1
+            issues.append(('DD', 'FAIL', 'progress 回调没改调 notifyProgress'))
+        if 'this.notify();' in pseg or 'let lastNotify' in pseg:
+            dd += 1
+            issues.append(('DD', 'FAIL', 'progress 回调仍调 notify() / 用局部 lastNotify，节流会放大'))
+    if 'let lastNotify' in dl:
+        dd += 1
+        issues.append(('DD', 'FAIL', 'Downloader 里还残留每任务局部 lastNotify'))
+
+    # ④ byId 升级 public + Map O(1) 索引
+    for kw, msg in (
+        ('taskIndex: Map<string, DownloadTask>', '缺 id → 任务 的 Map 索引'),
+        ('private indexDirty: boolean = true;', '缺集合结构变化标脏位'),
+        ('byId(id: string): DownloadTask | null {', 'byId 不是 public 或签名被改'),
+        ('this.indexDirty || this.taskIndex.size !== this.tasks.length', '缺惰性重建 + 长度兜底'),
+        ('this.rebuildIndex();', '缺索引重建'),
+    ):
+        if kw not in dl:
+            dd += 1
+            issues.append(('DD', 'FAIL', 'byId O(1) 索引：' + msg))
+    if 'private byId(' in dl:
+        dd += 1
+        issues.append(('DD', 'FAIL', 'byId 仍是 private，下载页取不到'))
+    # 结构变化点都要标脏：init / enqueueAll / 各 filter 删除
+    if dl.count('this.indexDirty = true;') < 4:
+        dd += 1
+        issues.append(('DD', 'FAIL', '集合结构变化点标脏不足（入队/删除/清理/init 至少 4 处）'))
+
+    # ⑤⑥ 行组件：O(1) 取数 + 只 running 行订阅高频
+    mi = dpage.find('struct DownloadTaskRow')
+    mj = dpage.find('export struct DownloadsPage')
+    row_seg = dpage[mi:mj] if 0 <= mi < mj else ''
+    page_seg = dpage[mj:] if mj >= 0 else ''
+    if not row_seg:
+        dd += 1
+        issues.append(('DD', 'FAIL', '切不出独立行组件 DownloadTaskRow 片段'))
+    else:
+        if 'App.get().downloads.byId(this.taskId)' not in row_seg:
+            dd += 1
+            issues.append(('DD', 'FAIL', '行组件 task() 没走 byId O(1) 取数'))
+        if 'for (const t of App.get().downloads.list())' in row_seg:
+            dd += 1
+            issues.append(('DD', 'FAIL', '行组件仍在 build 路径线性遍历 list()，O(n²) 没消除'))
+        if "@StorageProp('downloadProgress') progressVersion" not in row_seg:
+            dd += 1
+            issues.append(('DD', 'FAIL', '行组件没订阅独立高频 downloadProgress'))
+        if "live.status === 'running' && (this.progressVersion + 1) < 0" not in row_seg:
+            dd += 1
+            issues.append(('DD', 'FAIL', '行组件不是「只 running 行读 progressVersion」，高频订阅没收窄'))
+        if '(this.dlVersion + 1) < 0' not in row_seg:
+            dd += 1
+            issues.append(('DD', 'FAIL', '行组件没在渲染路径读低频 dlVersion（BC 依赖图手法回退）'))
+    if 'for (const t of App.get().downloads.list())' in dpage:
+        dd += 1
+        issues.append(('DD', 'FAIL', '页面/行组件仍在渲染路径线性遍历 list()，O(n²) 回潮'))
+    # 页面级只订阅低频，进度不触发 refresh / ForEach 全量 diff
+    if "@StorageProp('downloadVersion') @Watch('onChanged') downloadVersion" not in page_seg:
+        dd += 1
+        issues.append(('DD', 'FAIL', '页面级 refresh 没挂在低频 downloadVersion 上'))
+    if "@StorageProp('downloadProgress') @Watch" in page_seg:
+        dd += 1
+        issues.append(('DD', 'FAIL', '页面级订阅了高频 downloadProgress，refresh 会被进度每 300ms 触发'))
+
+    # ⑦ 高频信号零扩散（只在下载链路两个文件里）
+    spread = [f for f, s in src.items() if 'downloadProgress' in s
+              and not (f.endswith('core/Downloader.ets') or f.endswith('ui/pages/DownloadsPage.ets'))]
+    if spread:
+        dd += 1
+        issues.append(('DD', 'FAIL', '高频进度信号扩散到内容页 / 其它页：' + ','.join(spread)))
+
+    # ⑧ 既有结构与底座不回退
+    for kw, msg in (
+        ('struct DownloadTaskRow', '独立行组件被移除'),
+        ('taskId: task.id', 'ListItem 没挂稳定 id 的行组件'),
+        ('LongPressGesture(', '长按多选手势被移除'),
+        ('SelectionBar({', '公共多选条被移除'),
+        # 2026-11-16 用户要求「下载页再加一个左滑删除」，左滑入口转为必须项
+        ('.swipeAction(', '左滑删除入口被移除'),
+        ('SwipeEdgeEffect.Spring', '左滑没有弹性回弹'),
+    ):
+        if kw not in dpage:
+            dd += 1
+            issues.append(('DD', 'FAIL', 'BC 结构回退：' + msg))
+    mk = re.search(r'ForEach\(this\.tasks,.*?\},\s*\(task:\s*DownloadTask\)\s*=>\s*([^)]*)\)', dpage, re.S)
+    if not mk or mk.group(1).strip() != 'task.id':
+        dd += 1
+        issues.append(('DD', 'FAIL', 'BC 结构回退：ForEach key 不是稳定的 task.id'))
+    if 'flushSync();' not in store:
+        dd += 1
+        issues.append(('DD', 'FAIL', 'Store 同步落盘底座被改'))
+    if 'removeMany(ids: string[]): number' not in dl:
+        dd += 1
+        issues.append(('DD', 'FAIL', '批量删除收口 removeMany 被破坏'))
+    route_names = set(re.findall(r"name === '([A-Za-z][\w]*)'", index))
+    baseline = {'sheet', 'rankboard', 'discoverSection', 'search', 'artist', 'downloads',
+                'sources', 'playSettings', 'appearanceSettings', 'dataSettings',
+                'wyAccount', 'favoriteSheets'}
+    if route_names - baseline:
+        dd += 1
+        issues.append(('DD', 'FAIL', '路由表出现新名字：' + ','.join(sorted(route_names - baseline))))
+
+    if dd == 0:
+        issues.append(('DD', 'PASS',
+                       '下载稳态渲染收口：进度/状态拆成 downloadProgress / downloadVersion 两条信号，'
+                       '节流提到实例级全局 300ms（3 并发不再放大到 10 次/秒），页面级 refresh 不被进度触发；'
+                       'byId 升级 public + Map O(1)，行取数从 O(n²) 降为常数，只 running 行订阅高频进度；'
+                       '高频信号零扩散内容页，BC 稳定 key / 长按多选 / Store 底座 / removeMany 不回退，'
+                       '零新增路由、内容页零改动'))
+
+
+def check_download_finish(src):
+    """DE：下载「完成瞬间」收口（v1.0 · 2026-11-15，第三次性能返工）。
+
+    事故：前两轮分别修了「入队瞬间」(DC) 与「下载稳态进度刷新」(DD)，用户装机
+    反馈「现在好多了，但下载完成写入文件后还有一瞬间的卡顿，同时完成几个更明显」。
+    录屏 12.1-12.9s 整秒画面静止、连统计数字都不跳 —— 典型的 UI 线程被同步重活
+    占满，而不是重绘慢（重绘慢会掉帧但数字会跳）。
+
+    根因是第三条独立链路，前两轮从没碰过 run() 的完成收尾：
+      downloadFile 的 complete 回调之后，一首歌在同一帧同步做
+        copyFileSync(整文件) → AudioTag.embed 整读整写（无损几十 MB，自带歌词
+        还写两遍）→ persist(整队列 JSON.stringify + flushSync 同步刷盘) →
+        notify(downloadVersion → 页面级 refresh 全量 diff + 234 行 + 跨页连锁)
+      并发 3 首几乎同时完成 = 3 段连续大 IO + 3 次全表重建连成几百毫秒阻塞块。
+
+    锁死三刀 + 一个落盘底座不动：
+      ① 完成收尾挂 finalizeChain 串行链，每首之间 nextFrame() 让出主线程一帧；
+         链用 ordered.catch 兜底，单首异常不会卡死后续队列；job 内复查取消。
+      ② 完成/失败状态改 scheduleCommit() 合并广播（固定 150ms 窗口，N 次
+         页面级全量重建压成 1 次）；失败/用户主动操作仍即时 notify()，需即时反馈。
+      ③ 内置歌词由 builtInLrc() 一次算好、随第一次 embed 一次写全，
+         消除「先空词写一遍、再补词写第二遍」的整文件双写。
+      ④ persist() 仍在完成那一刻当场执行、磁盘实时，绝不因合并而延迟或丢记录；
+         onBackground 调 flushPending() 补发挂起的广播。
+      ⑤ DD 双信号 / DC 批量入队 / CE 内嵌时机与单文件 / BC 稳定 key 与左滑 /
+         Store.flushSync 底座 / removeMany / 零新增路由 / 高频信号零扩散全不回退。
+    """
+    de = 0
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    dl = get('core/Downloader.ets')
+    dpage = get('ui/pages/DownloadsPage.ets')
+    store = get('core/Store.ets')
+    ability = get('entryability/EntryAbility.ets')
+    tag = get('core/AudioTag.ets')
+    index = get('pages/Index.ets')
+    if not all((dl, dpage, store, ability, tag, index)):
+        issues.append(('DE', 'WARN', '没找齐完成收尾相关文件，跳过检查'))
+        return
+
+    # ① 完成收尾串行链：存在、被使用、异常不断链、每首让出一帧
+    for kw, msg in (
+        ('private finalizeChain: Promise<void> = Promise.resolve();', '缺串行 finalizeChain'),
+        ('private inFinalizeOrder(job: () => Promise<void>): Promise<void>', '缺串行收口 inFinalizeOrder'),
+        ('this.finalizeChain = ordered.catch(', '串行链没做失败兜底，单首异常会卡死后续队列'),
+        ('await this.inFinalizeOrder(', '完成收尾没挂进串行链'),
+    ):
+        if kw not in dl:
+            de += 1
+            issues.append(('DE', 'FAIL', '完成收尾串行错峰：' + msg))
+    mn = re.search(r'private nextFrame\(\): Promise<void> \{([\s\S]*?)\n  \}', dl)
+    if not mn or 'setTimeout(' not in mn.group(1):
+        de += 1
+        issues.append(('DE', 'FAIL', 'nextFrame 没用 setTimeout 让出主线程一帧'))
+
+    # 锁死整段完成收尾都在 job 内，且不再直接 notify（广播走合并）
+    s = dl.find('await this.inFinalizeOrder(')
+    e = dl.find('this.scheduleCommit();', s)
+    job = dl[s:e] if 0 <= s < e else ''
+    if not job:
+        de += 1
+        issues.append(('DE', 'FAIL', '切不出完成收尾 job 片段'))
+    else:
+        for kw, msg in (
+            ('await this.moveToTarget(tempPath, fileName)', '整文件落盘没进串行链（或没改异步）'),
+            ('await AudioTag.embed(finalPath, task.format, task.song, builtIn)', '内嵌没进串行链或没一次写全'),
+            ('this.isCancelled(task.id)', '排队期间没复查取消痕迹'),
+            ('this.persist();', '落盘没当场做（会因合并而延迟/丢记录）'),
+            ("task.status = 'done'", '完成状态没在 job 内改写'),
+        ):
+            if kw not in job:
+                de += 1
+                issues.append(('DE', 'FAIL', '完成收尾 job：' + msg))
+        if 'addFromDownload' in job:
+            de += 1
+            issues.append(('DE', 'FAIL', '完成收尾又往本地音乐登记（2026-11-16 已取消）'))
+        if 'dropCompleted(' in job:
+            de += 1
+            issues.append(('DE', 'FAIL', '完成收尾又把记录出队了（2026-11-16 已回退为保留在下载页）'))
+        if 'this.notify();' in job:
+            de += 1
+            issues.append(('DE', 'FAIL', '完成收尾仍直接 notify，全表重建没合并'))
+
+    # ①-b 第四次返工：完成瞬间零同步大 IO（装机实测「还是卡一下」的真正根因）
+    for kw, msg in (
+        ('await fs.moveFile(tempPath, targetPath)', '落盘没用异步 moveFile'),
+        ('await fs.copyFile(tempPath, targetPath)', 'move 失败没异步 copyFile 回退'),
+    ):
+        if kw not in dl:
+            de += 1
+            issues.append(('DE', 'FAIL', '完成瞬间异步落盘：' + msg))
+    for kw, msg in (('await fs.read(fd.fd, buf,', 'AudioTag 头部读取仍是同步'),
+                    # 第五次返工：整文件 fresh 已拆成「新头 + 分块搬音频」，
+                    # dst.fd / freshHead 是新结构的字面量；详见 DG 组流式断言。
+                    ('await fs.write(dst.fd, AudioTag.toBuffer(freshHead))', 'AudioTag 写新头仍是同步'),
+                    ('await fs.read(src.fd, chunk,', 'AudioTag 音频分块搬运没走异步'),
+                    ('async embed(path: string', 'AudioTag.embed 没改成 async')):
+        if kw not in tag:
+            de += 1
+            issues.append(('DE', 'FAIL', '完成瞬间异步标签：' + msg))
+    if 'copyFileSync(tempPath' in dl or 'fs.readSync(fd.fd, buf' in tag:
+        de += 1
+        issues.append(('DE', 'FAIL', '完成链路仍有同步整文件 IO（卡顿根因回潮）'))
+    if 'await this.inFinalizeOrder(async (): Promise<void> =>' not in dl:
+        de += 1
+        issues.append(('DE', 'FAIL', '完成收尾 job 不是 async，IO 无法让出事件循环'))
+
+    # ② 广播合并窗口：常量范围合理、固定窗口不重置、只合并广播不合并落盘
+    mc = re.search(r'const DOWNLOAD_COMMIT_WINDOW_MS: number = (\d+);', dl)
+    if not mc or not (50 <= int(mc.group(1)) <= 400):
+        de += 1
+        issues.append(('DE', 'FAIL', '缺合理的广播合并窗口常量（50~400ms）'))
+    for kw, msg in (
+        ('private scheduleCommit(): void', '缺合并广播入口 scheduleCommit'),
+        ('private flushCommit(): void', '缺窗口收口 flushCommit'),
+        ('flushPending(): void', '缺公开的切后台兜底 flushPending'),
+        ('if (this.commitTimer >= 0)', '合并窗口不是固定窗口（会被连续完成无限推迟）'),
+    ):
+        if kw not in dl:
+            de += 1
+            issues.append(('DE', 'FAIL', '广播合并：' + msg))
+    mf = re.search(r'private flushCommit\(\): void \{([\s\S]*?)\n  \}', dl)
+    fbody = mf.group(1) if mf else ''
+    if 'this.notify();' not in fbody:
+        de += 1
+        issues.append(('DE', 'FAIL', 'flushCommit 没广播，完成状态刷新会被吞掉'))
+    if 'this.persist();' in fbody:
+        de += 1
+        issues.append(('DE', 'FAIL', 'flushCommit 又做落盘：完成记录被延迟到窗口末，有丢失风险'))
+
+    # ③ 切后台兜底确实接上
+    if "import { Downloader } from '../core/Downloader';" not in ability:
+        de += 1
+        issues.append(('DE', 'FAIL', 'EntryAbility 没引入 Downloader'))
+    if 'Downloader.get().flushPending();' not in ability:
+        de += 1
+        issues.append(('DE', 'FAIL', 'onBackground 没调 flushPending，切后台会漏掉挂起广播'))
+
+    # ④ 消除整文件双写：内置词一次写全、embedLyricLater 只处理联网取词
+    ml = re.search(r'private embedLyricLater\([^)]*\): void \{([\s\S]*?)\n  \}', dl)
+    lbody = ml.group(1) if ml else ''
+    for kw, msg in (
+        ('private static builtInLrc(song: SongInfo): string', '缺一次性内置歌词判定 builtInLrc'),
+        ('const builtIn: string = Downloader.builtInLrc(task.song);', '完成收尾没先算内置歌词'),
+    ):
+        if kw not in dl:
+            de += 1
+            issues.append(('DE', 'FAIL', '消除双写：' + msg))
+    if not lbody:
+        de += 1
+        issues.append(('DE', 'FAIL', '切不出 embedLyricLater 方法体'))
+    else:
+        if 'Downloader.builtInLrc(song).length > 0' not in lbody or 'return;' not in lbody:
+            de += 1
+            issues.append(('DE', 'FAIL', 'embedLyricLater 没对内置歌词直接返回，仍会整读整写第二遍'))
+        if 'AudioTag.embed(path, format, song, builtIn)' in lbody:
+            de += 1
+            issues.append(('DE', 'FAIL', 'embedLyricLater 仍有内置歌词二次 embed（双写没消除）'))
+        for kw, msg in (('LyricRepo.get().get(song)', '联网取词链路被删'),
+                        ('toLrcText(', 'LyricDoc→LRC 还原被删'),
+                        ('AudioTag.embed(path, format, song, lrc)', '联网歌词的二次 embed 被删')):
+            if kw not in lbody:
+                de += 1
+                issues.append(('DE', 'FAIL', '消除双写时误删功能：' + msg))
+
+    # ⑤ 不回退：DD / DC / CE / BC / Store 底座 / 零新增路由 / 高频零扩散
+    for kw, msg in (
+        ('private notifyProgress(): void', 'DD 双信号被破坏'),
+        ("setOrCreate('downloadProgress'", 'DD 高频独立信号被破坏'),
+        ("setOrCreate('downloadVersion', Date.now());", 'DD 低频状态广播被破坏'),
+        ('taskIndex: Map<string, DownloadTask>', 'DD byId O(1) 索引被破坏'),
+        ('removeMany(ids: string[]): number', 'DC 批量删除收口被破坏'),
+        ('const seen: Set<string> = new Set<string>();', 'DC 批量入队单次查重被破坏'),
+    ):
+        if kw not in dl:
+            de += 1
+            issues.append(('DE', 'FAIL', '既有优化回退：' + msg))
+    for kw, msg in (
+        ('struct DownloadTaskRow', 'BC 独立行组件被移除'),
+        ('(task: DownloadTask) => task.id', 'BC ForEach 稳定 key 被改'),
+        ('LongPressGesture(', 'BC 长按多选被移除'),
+    ):
+        if kw not in dpage:
+            de += 1
+            issues.append(('DE', 'FAIL', '既有优化回退：' + msg))
+    if 'flushSync();' not in store:
+        de += 1
+        issues.append(('DE', 'FAIL', 'Store 同步落盘底座被改'))
+    # CE 内嵌时机：异步落盘 < embed < done，且仍只产出一个文件
+    copy_at = dl.find('await this.moveToTarget(tempPath, fileName)')
+    embed_at = dl.find('AudioTag.embed(finalPath, task.format, task.song,')
+    done_at = dl.find("task.status = 'done'", embed_at)
+    if not (0 <= copy_at < embed_at < done_at):
+        de += 1
+        issues.append(('DE', 'FAIL', 'CE 内嵌时机被打乱（必须落盘后、标记 done 前）'))
+    if 'rewrite(' not in tag or '已回滚原文件' not in tag:
+        de += 1
+        issues.append(('DE', 'FAIL', 'AudioTag 整体重写 + 失败回滚被破坏'))
+    spread = [f for f, text in src.items() if 'downloadProgress' in text
+              and not (f.endswith('core/Downloader.ets') or f.endswith('ui/pages/DownloadsPage.ets'))]
+    if spread:
+        de += 1
+        issues.append(('DE', 'FAIL', '高频进度信号扩散到内容页：' + ','.join(spread)))
+    route_names = set(re.findall(r"name === '([A-Za-z][\w]*)'", index))
+    baseline = {'sheet', 'rankboard', 'discoverSection', 'search', 'artist', 'downloads',
+                'sources', 'playSettings', 'appearanceSettings', 'dataSettings',
+                'wyAccount', 'favoriteSheets'}
+    if route_names - baseline:
+        de += 1
+        issues.append(('DE', 'FAIL', '路由表出现新名字：' + ','.join(sorted(route_names - baseline))))
+
+    if de == 0:
+        issues.append(('DE', 'PASS',
+                       '下载完成瞬间收口：完成收尾挂 finalizeChain 串行链、每首之间让出主线程一帧；'
+                       '第四次返工把整文件搬移与标签整读整写全部改成异步 Promise，'
+                       'UI 线程不再被单首同步大 IO 占住（这才是装机后「还是卡一下」的残留根因）；'
+                       '内置歌词一次 embed 写全，整文件读写从 2 遍降为 1 遍；完成项保留在下载页且不写本地音乐，'
+                       '状态仍当场落盘（零丢失），页面级全量重建合并到 150ms 固定窗口只广播一次；'
+                       '切后台 flushPending 兜底；失败/用户操作保持即时反馈；'
+                       'DD/DC/CE/BC/Store 底座不回退，零新增路由、内容页零改动'))
+
+
+def check_download_rework_v4(src):
+    """DF：下载管理页重做 + 完成留队并进本地音乐 + 完成瞬间零同步 IO。
+
+    用户口径四条（2026-11-15）：① 数据二级页收下红圈标记的三块（统计卡 / 同时下载 / 自动下载）；
+    ② 下载完成的歌自动添加到本地音乐；③ 下载页操作改成长按多选
+    （单选 / 全选）、单击暂停 / 开始、全部暂停 / 全部开始 / 清除全部任务，
+    原来那些（左滑、行尾 ×、清除、清空失败）去掉；④ 完成时还是卡一下，要求根治。
+
+    2026-11-16 用户两次纠偏（最终口径）：
+      ①「下载完成后歌曲还在下载管理页中」→ 完成项不出队；
+      ②「不要把下载的歌曲放在本地音乐，太占内存」→ 完成即登记本地音乐的做法取消；
+      ③「下载页再加一个左滑删除」→ 左滑删除回归，删记录时连文件一起删。
+
+    锁死：
+      ① 三块设置只在 DataSettingsPage，DownloadsPage 里彻底没有；
+      ② 完成记录**必须留在队列**（dropCompleted 不许回归），且**不许再写 LocalRepo**
+         （addFromDownload 已删除），已下载语义只查队列 done 记录；老版本自动登记
+         进本地音乐的历史条目由 LocalRepo.detachExternal() 在 App.init 里摘掉；
+      ③ Downloader 有 toggle / pause / resume / pauseAll / resumeAll / clearAll，
+         暂停走原生 suspend / restore（进度不丢）；下载页有新工具条 + 左滑删除，
+         旧的「清除 / 清空失败」入口仍不许回来；
+      ④ 完成链路无同步整文件 IO（DE 细查）、Store.flushSync 底座不动；
+      ⑤ 零新增路由、内容页零改动。
+    """
+    df = 0
+
+    def get(suffix: str) -> str:
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    dl = get('core/Downloader.ets')
+    dpage = get('ui/pages/DownloadsPage.ets')
+    data = get('ui/pages/DataSettingsPage.ets')
+    local = get('core/LocalRepo.ets')
+    app = get('core/App.ets')
+    tag = get('core/AudioTag.ets')
+    store = get('core/Store.ets')
+    index = get('pages/Index.ets')
+    if not all((dl, dpage, data, local, app, tag, store, index)):
+        issues.append(('DF', 'WARN', '没找齐本轮改动相关文件，跳过检查'))
+        return
+
+    # ① 红圈标记的三块：只在数据二级页，下载页彻底没有
+    for kw in ('statCard()', 'concurrencyCard()', 'autoDownloadCard()',
+               "'听够 2/3 自动下载'", "'同时下载'", "'保存目录'", "'已下载'"):
+        if kw not in data:
+            df += 1
+            issues.append(('DF', 'FAIL', '数据二级页缺搬来的内容：' + kw))
+    for kw in ('statCard()', 'concurrencyCard()', 'autoDownloadCard()',
+               'DOWNLOAD_CONCURRENCY_MIN', 'setAutoDownloadOnPlay', 'refreshDir()'):
+        if kw in dpage:
+            df += 1
+            issues.append(('DF', 'FAIL', '下载管理页仍残留已搬走的控件：' + kw))
+    if "@StorageProp('downloadVersion') @Watch('onDownloadChanged')" not in data:
+        df += 1
+        issues.append(('DF', 'FAIL', '数据二级页没订阅下载状态，统计不会刷新'))
+
+    # ② 完成留队、不登记本地音乐、记录与文件一起删（2026-11-16 用户第三次口径）
+    for kw, msg in (('detachExternal(): LocalSong[]', 'LocalRepo 缺历史下载条目清理'),
+                    ('this.songs = keep;', '清理没真正摘掉列表'),
+                    ('removed.push(song);', '摘掉的条目没返回（会造成文件孤儿）')):
+        if kw not in local:
+            df += 1
+            issues.append(('DF', 'FAIL', msg))
+    for kw, msg in (('addFromDownload', '下载完成又自动登记进本地音乐（用户要求别占本地音乐）'),
+                    ('notifyNow(): void', 'LocalRepo 还留着零调用的合并广播入口')):
+        if kw in local:
+            df += 1
+            issues.append(('DF', 'FAIL', msg))
+    for kw, msg in (
+        ('kept.push(task);', '完成记录没有保留在下载队列'),
+        ('this.find(song.id) !== null', '已下载状态没查队列 done 记录'),
+        ('fs.unlinkSync(task.path);', '删任务没删已下载文件（会留下孤儿占空间）'),
+        ('private dropOne(task: DownloadTask): void', '缺单条摘除收口'),
+        # 2026-11-16 审查修复：完成项长期留队后的三条一致性保障
+        ('DOWNLOAD_PERSIST_MAX', '缺队列持久化上限常量'),
+        ('private trimOverflow(): void', '缺超限裁剪（记录会无限膨胀）'),
+        ('this.trimOverflow();', 'persist 没做超限裁剪（记录会无限膨胀）'),
+        ('consumeTrimNotice(): number', '超限自动删文件没有可提示的计数'),
+        ('size = fs.statSync(task.path).size;', '冷启动没校验 done 记录的文件是否还在'),
+        ('this.purgeTemp(context);', '启动没清理上次遗留的下载临时文件'),
+        ('if (interrupted > 0 || missing > 0 || repaired > 0)', '冷启动修正过状态却没落盘'),
+        ('const size: number = fs.statSync(finalPath).size;', '完成没记真实文件大小（占用空间会显示 0）'),
+        # 2026-11-16 全工程审查补：自动裁剪不得删掉正在播放的文件
+        ("const playing: string = AppStorage.get<string>('playingLocalPath') ?? '';",
+         '超限裁剪没读正在播放的路径（会删掉正在听的歌）'),
+        ('if (playing.length > 0 && task.path === playing) {', '超限裁剪没避让正在播放的任务'),
+    ):
+        if kw not in dl:
+            df += 1
+            issues.append(('DF', 'FAIL', msg))
+    for kw, msg in (
+        ('LocalRepo.get().addFromDownload', '完成收尾仍在写本地音乐'),
+        ('this.localDirty', '本地音乐脏标记没有随登记一起移除'),
+        ('for (const local of LocalRepo.get().list())', '入队查重还在扫本地音乐'),
+    ):
+        if kw in dl:
+            df += 1
+            issues.append(('DF', 'FAIL', msg))
+    if 'dropCompleted' in dl:
+        df += 1
+        issues.append(('DF', 'FAIL', 'dropCompleted 又回来了（完成项会从下载页消失）'))
+    for kw in ("'已完成'", '共 ', '.swipeAction(', 'swipeDelete(',
+               'nearLimit()', 'Downloader.capacity()', 'consumeTrimNotice()'):
+        if kw not in dpage:
+            df += 1
+            issues.append(('DF', 'FAIL', '下载页缺已完成状态 / 计数 / 左滑删除 / 上限提示：' + kw))
+    # 2026-11-16 审查：下载与本地音乐解耦后留下的零调用符号必须清掉
+    if 'usedBytes' in local:
+        df += 1
+        issues.append(('DF', 'FAIL', 'LocalRepo 还留着零调用的 usedBytes'))
+    home = get('ui/pages/HomePage.ets')
+    if home and 'downloadCount' in home:
+        df += 1
+        issues.append(('DF', 'FAIL', '首页还留着零读写的 downloadCount'))
+    li = app.find('await this.local.init(context);')
+    de = app.find('const legacyLocal = this.local.detachExternal();')
+    di = app.find('this.downloads.init(context);')
+    ab = app.find('this.downloads.absorbLegacy(legacyLocal);')
+    if not (0 <= li < de < di < ab):
+        df += 1
+        issues.append(('DF', 'FAIL',
+                       'App 没在 LocalRepo 就绪后摘历史登记、并在下载器 init 后补成队列记录'
+                       '（只摘不放会让老用户已下载的歌彻底消失、文件白占空间）'))
+    if 'absorbLegacy(legacy: LocalSong[]): number' not in dl:
+        df += 1
+        issues.append(('DF', 'FAIL', '下载器缺老版本遗留条目接管入口'))
+    if 'private static fileExists(path: string): boolean' not in dl:
+        df += 1
+        issues.append(('DF', 'FAIL', '缺 fileExists 收口（接管历史条目时无法判文件在不在）'))
+    if "if (song.source === 'local') {" in app:
+        df += 1
+        issues.append(('DF', 'FAIL', '播放路径仍按 source 分流（补录条目会「看得见播不了」）'))
+    if "return App.playablePath(path);" not in app and 'App.playablePath(task.path)' not in app:
+        df += 1
+        issues.append(('DF', 'FAIL', '播放器本地路径供给被破坏'))
+    pl = get('core/Player.ets')
+    if not pl or "AppStorage.setOrCreate('playingLocalPath', localPath);" not in pl:
+        df += 1
+        issues.append(('DF', 'FAIL', '播放器没暴露正在播放的本地路径（超限裁剪无法避让）'))
+
+    # ③ 新操作逻辑：原生暂停/恢复 + 五个批量/单例入口 + 新 UI
+    for kw, msg in (
+        ('activeDownloads: Map<string, request.DownloadTask>', '缺系统下载任务索引'),
+        ('toggle(id: string): void', '缺单击切换'),
+        ('private async pause(id: string', '缺暂停'),
+        ('private async resume(id: string', '缺继续'),
+        ('pauseAll(): void', '缺全部暂停'),
+        ('resumeAll(): void', '缺全部开始'),
+        ('clearAll(): void', '缺清除全部任务'),
+        ('await live.suspend()', '暂停没用原生 suspend（进度会丢）'),
+        ('await live.restore()', '开始没用原生 restore'),
+        ('Promise.all(jobs)', '批量暂停/开始没并发收口（会逐首刷广播）'),
+    ):
+        if kw not in dl:
+            df += 1
+            issues.append(('DF', 'FAIL', 'Downloader ' + msg))
+    for kw in ('全部暂停', '全部开始', '清除全部任务', 'LongPressGesture(',
+               'SelectionBar({', 'toggleSelect(', 'toggleAll()', 'deleteSelected()'):
+        if kw not in dpage:
+            df += 1
+            issues.append(('DF', 'FAIL', '下载页缺新操作：' + kw))
+    for kw in ('clearDone()', 'clearFailed()', 'IconTap({', "Text('清除')", '清空失败'):
+        if kw in dpage:
+            df += 1
+            issues.append(('DF', 'FAIL', '下载页旧操作没去干净：' + kw))
+
+    # ④ 完成瞬间零同步大 IO + 落盘底座不动
+    if 'copyFileSync(tempPath' in dl or 'this.copyToTarget(' in dl:
+        df += 1
+        issues.append(('DF', 'FAIL', '完成链路仍有同步整文件复制'))
+    if 'async embed(path: string' not in tag or 'await fs.read(fd.fd, buf,' not in tag:
+        df += 1
+        issues.append(('DF', 'FAIL', 'AudioTag 大 IO 没改异步'))
+    if 'flushSync();' not in store:
+        df += 1
+        issues.append(('DF', 'FAIL', 'Store 同步落盘底座被改（会丢完成记录）'))
+
+    # ⑤ 零新增路由
+    route_names = set(re.findall(r"name === '([A-Za-z][\w]*)'", index))
+    baseline = {'sheet', 'rankboard', 'discoverSection', 'search', 'artist', 'downloads',
+                'sources', 'playSettings', 'appearanceSettings', 'dataSettings',
+                'wyAccount', 'favoriteSheets'}
+    if route_names - baseline:
+        df += 1
+        issues.append(('DF', 'FAIL', '路由表出现新名字：' + ','.join(sorted(route_names - baseline))))
+
+    if df == 0:
+        issues.append(('DF', 'PASS',
+                       '下载管理页重做：红圈三块整体搬进数据二级页；完成项留在下载页'
+                       '（不出队、不登记本地音乐，addFromDownload 已删除，老版本历史条目启动时摘掉）；'
+                       '已下载判定 / 入队查重 / 播放路径全部改由队列 done 记录支撑；'
+                       '长按多选 + 单击暂停/开始 + 左滑删除（记录与文件一起删），'
+                       '完成项冷启动校验文件存在、超上限按队尾清理并同步删文件、启动清临时文件，'
+                       '暂停走原生 suspend/restore 保进度，旧清除/清空失败入口仍清零；'
+                       '完成链路的整文件搬移与标签整读整写全部改异步 Promise，UI 线程不再被同步大 IO 占住；'
+                       'Store.flushSync 底座与零新增路由保持'))
+
+
+def check_download_global_stall(src):
+    """DG：下载完成「全局顿挫」根治（v1.0 · 2026-11-15，第五次性能返工）。
+
+    装机反馈：前四版削的都是「次数 / 同步 IO 等待」，完成时「没那么严重了但还是
+    能感觉到」，且「卡顿影响是全局的、在其他界面也能感觉到顿挫」。
+    与页面无关 = 进程级停顿，真根因是三处前四版一直没碰的全局负载：
+
+      ① AudioTag 每首完成在主线程连分配 3 份几十 MB 整文件大对象：
+         readAll 的 ArrayBuffer(size) + concat 的 Uint8Array(total) +
+         toBuffer 的 ArrayBuffer(length)，还有两次整文件 set() 内存拷贝。
+         并发 3 首 = 9 份，方舟 GC 回收大对象是全局 STW。
+         → 改「只读 ≤64KB 标签头(二跳精确补读上限 4MB) + 256KB 分块流式搬音频」，
+           音频字节不进 JS 堆，大对象分配归零。
+      ② 每首完成 2 次同步 flushSync（当时 LocalRepo 登记一次 + Downloader 一次），
+         同步磁盘 IO 全局占住 UI 线程。
+         → 先合并成一次；2026-11-16 下载不再登记本地音乐，完成帧只剩 Downloader 这一次。
+      ③ 完成窗口连发 localVersion + downloadVersion 两次 AppStorage 全扇出，
+         每行 SongRow 都靠 dlVersion 挂进依赖图，一次广播唤醒所有常驻页/所有行。
+         → 完成帧只发 downloadVersion 一次；本地音乐不再有下载引起的变化，无需补发。
+
+    锁死四条不变式，防止回退：
+      A 零整文件大对象：AudioTag 不得出现 readAll / 按 stat.size 分配 ArrayBuffer /
+        stripId3 整文件 subarray；必须有 readHead / headEnd / CHUNK 分块循环。
+      B 完成帧不写本地音乐：LocalRepo 不得再有 addFromDownload / notifyNow；
+        Downloader.persist 仍当场 flushSync（零丢失红线不破）。
+      C 完成帧单次扇出：flushCommit 只 notify 一次；flushPending 只补发挂起广播。
+      D 不回退 CE 单文件/幂等/失败回滚、DE 串行链/异步 IO、DF 完成留队且不进本地音乐、
+        Store.flushSync 底座、零新增路由。
+    """
+    def get(suffix):
+        return next((s for f, s in src.items() if f.endswith(suffix)), '')
+
+    tag = get('core/AudioTag.ets')
+    dl = get('core/Downloader.ets')
+    local = get('core/LocalRepo.ets')
+    store = get('core/Store.ets')
+    ability = get('entryability/EntryAbility.ets')
+    index = get('pages/Index.ets')
+    bad = 0
+
+    # A 零整文件大对象：只读标签头 + 分块流式搬音频
+    for kw, msg in (
+        ('const PROBE_HEAD', '缺 64KB 探测头常量'),
+        ('const MAX_HEAD', '缺标签区读取硬上限'),
+        ('const CHUNK', '缺流式分块大小常量'),
+        ('private static async readHead(', '缺只读标签区头部的 readHead'),
+        ('private static headEnd(', '缺标签区结束位置计算 headEnd'),
+        ('private static async rewrite(', '缺流式重写 rewrite'),
+        ('new ArrayBuffer(CHUNK)', '分块缓冲没按 CHUNK 分配'),
+        ('while (pos < total)', '音频主体没有按分块循环搬运'),
+        ('await fs.read(src.fd, chunk,', '分块读没走异步'),
+        ('await fs.write(dst.fd, chunk,', '分块写没走异步'),
+        ('await fs.copyFile(tmp, path)', '临时文件没异步覆盖回原文件'),
+        ('foundLast', 'FLAC 只读头部时没校验 last block（会截断音频）'),
+    ):
+        if kw not in tag:
+            bad += 1
+            issues.append(('DG', 'FAIL', 'AudioTag 流式改造：' + msg))
+    # 反向：整读整写大对象绝不能回来
+    for kw, msg in (
+        ('readAll(', '整文件 readAll 回来了（大对象/GC 全局停顿回潮）'),
+        ('new ArrayBuffer(size)', '又按整文件大小分配 ArrayBuffer'),
+        ('stripId3(', 'stripId3 整文件 subarray 回来了'),
+        ("parts.push(original.subarray(parsed.audioOffset))", 'FLAC 又把整份音频拼进内存'),
+        ('const fresh = AudioTag.concat(', '又把整文件 fresh 拼进内存'),
+    ):
+        if kw in tag:
+            bad += 1
+            issues.append(('DG', 'FAIL', 'AudioTag 大对象回退：' + msg))
+    # 失败回滚语义不丢
+    if '已回滚原文件' not in tag or "fs.unlinkSync(tmp);" not in tag:
+        bad += 1
+        issues.append(('DG', 'FAIL', '流式重写没保住失败回滚 / 临时文件清理'))
+    if 'new ArrayBuffer(probeLen)' not in tag:
+        bad += 1
+        issues.append(('DG', 'FAIL', '第一跳不是 64KB 探测（常态仍会分配大对象）'))
+
+    # B 完成帧不写本地音乐（2026-11-16 用户口径），零丢失底座不动
+    if 'addFromDownload' in local or 'notifyNow' in local:
+        bad += 1
+        issues.append(('DG', 'FAIL', '下载完成又往本地音乐写（用户要求别占本地音乐列表）'))
+    if 'flushSync();' not in store:
+        bad += 1
+        issues.append(('DG', 'FAIL', 'Store 同步落盘底座被改（完成记录会丢）'))
+    if 'this.persist();' not in dl:
+        bad += 1
+        issues.append(('DG', 'FAIL', '完成帧没当场 persist（零丢失红线破了）'))
+
+    # C 完成窗口只扇出一次
+    fc = re.search(r'private flushCommit\(\): void \{([\s\S]*?)\n  \}', dl)
+    fbody = fc.group(1) if fc else ''
+    if not fbody:
+        bad += 1
+        issues.append(('DG', 'FAIL', '切不出 flushCommit 方法体'))
+    else:
+        if 'LocalRepo.get().notifyNow();' in fbody:
+            bad += 1
+            issues.append(('DG', 'FAIL', '完成帧仍发第二次 localVersion 全扇出'))
+        if fbody.count('this.notify();') != 1:
+            bad += 1
+            issues.append(('DG', 'FAIL', '完成帧 notify 次数不是 1'))
+        if 'this.persist();' in fbody:
+            bad += 1
+            issues.append(('DG', 'FAIL', 'flushCommit 又做落盘：完成记录被延迟'))
+    fp = re.search(r'flushPending\(\): void \{([\s\S]*?)\n  \}', dl)
+    pbody = fp.group(1) if fp else ''
+    if 'this.flushCommit();' not in pbody:
+        bad += 1
+        issues.append(('DG', 'FAIL', '切后台没补发挂起的完成广播'))
+    if 'LocalRepo.get().notifyNow();' in pbody or 'this.localDirty' in pbody:
+        bad += 1
+        issues.append(('DG', 'FAIL', '切后台还在补发早已不存在的本地音乐刷新'))
+    if "Downloader.get().flushPending();" not in ability:
+        bad += 1
+        issues.append(('DG', 'FAIL', 'EntryAbility.onBackground 没接 flushPending'))
+
+    # D 不回退：CE 时机 / DE 串行链 / DF 完成留队 / 零新增路由
+    for kw, msg in (
+        ('await this.inFinalizeOrder(async (): Promise<void> =>', '完成收尾串行链被破坏'),
+        ('await AudioTag.embed(finalPath, task.format, task.song, builtIn)', '标签内嵌没进串行链'),
+        ('this.scheduleCommit();', '完成广播没走合并窗口'),
+    ):
+        if kw not in dl:
+            bad += 1
+            issues.append(('DG', 'FAIL', '既有链路回退：' + msg))
+    if 'addFromDownload' in dl:
+        bad += 1
+        issues.append(('DG', 'FAIL', '完成记录又往本地音乐登记（2026-11-16 已取消）'))
+    if 'dropCompleted' in dl:
+        bad += 1
+        issues.append(('DG', 'FAIL', '完成记录又被出队（2026-11-16 已回退为保留在下载页）'))
+    copy_at = dl.find('await this.moveToTarget(tempPath, fileName)')
+    embed_at = dl.find('AudioTag.embed(finalPath, task.format, task.song,')
+    done_at = dl.find("task.status = 'done'", embed_at)
+    if not (0 <= copy_at < embed_at < done_at):
+        bad += 1
+        issues.append(('DG', 'FAIL', 'CE 内嵌时机被打乱（必须落盘后、标记 done 前）'))
+    if not index:
+        bad += 1
+        issues.append(('DG', 'FAIL', '缺 Index.ets，无法校验零新增路由'))
+    else:
+        route_names = set(re.findall(r"name === '([A-Za-z][\w]*)'", index))
+        baseline = {'sheet', 'rankboard', 'discoverSection', 'search', 'artist', 'downloads',
+                    'sources', 'playSettings', 'appearanceSettings', 'dataSettings',
+                    'wyAccount', 'favoriteSheets'}
+        if route_names - baseline:
+            bad += 1
+            issues.append(('DG', 'FAIL', '路由表出现新名字：' + ','.join(sorted(route_names - baseline))))
+
+    if bad == 0:
+        issues.append(('DG', 'PASS',
+                       '下载完成全局顿挫根治：AudioTag 由「整读整写 3 份几十 MB 大对象」'
+                       '改为「64KB 探测头 + 按需精确补读(≤4MB) + 256KB 分块流式搬音频」，'
+                       '音频字节不进 JS 堆、大对象分配归零，方舟 GC 全局 STW 消除；'
+                       '完成帧只做一次当场 flushSync（下载不再写本地音乐，零丢失不动），'
+                       'AppStorage 全扇出只剩 downloadVersion 一次；'
+                       'CE 单文件/幂等/失败回滚、DE 串行链/异步 IO、DF 完成留队且不进本地音乐、'
+                       'Store.flushSync 底座、零新增路由全不回退'))
+
+
 def main():
     src = load()
     if not src:
@@ -6042,7 +7531,7 @@ def main():
                check_check_matrix, check_swipe_delete, check_local_import,
                check_lyric_layout, check_home_feed, check_fav_feedback, check_sheet_surface,
                check_tab_routes, check_playlist_ux, check_tab_swipe,
-               check_smart_hunt, check_longpress_preload, check_fav_layout,
+               check_native_immersive, check_smart_hunt, check_longpress_preload, check_fav_layout,
                check_download_swipe_stable, check_settings_subpages, check_song_marquee,
                check_quality_summary_in_subpage, check_data_subpage, check_wy_account,
                check_wy_fav_sync,
@@ -6055,7 +7544,11 @@ def main():
                check_v277_account_summary_login_only,
                check_home_grid_tint_uniform,
                check_glass_theme_removed, check_qqkg_account_removed,
-               check_download_audio_tags):
+               check_download_audio_tags, check_download_concurrency,
+               check_ignore_interrupt, check_b_cleanup, check_song_comments,
+               check_auto_download, check_mf_capabilities, check_download_batch,
+               check_download_render, check_download_finish, check_download_rework_v4,
+               check_download_global_stall):
         fn(src)
 
     width = max(len(m) for _, _, m in issues)

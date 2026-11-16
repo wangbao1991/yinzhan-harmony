@@ -593,6 +593,86 @@
         mfRaw: JSON.stringify(o)
       };
     }
+
+    /* ---------------- v2.8x：扩展能力的返回归一 ----------------
+     * 旧版运行时只把洛雪 action 翻成 7 个 MusicFree 方法。真实订阅里
+     * importMusicSheet / getAlbumInfo / getTopLists / getTopListDetail /
+     * getRecommendSheetTags / getRecommendSheets / getMusicInfo 出现频次极高，
+     * 但宿主调过去只会拿到 {} —— 插件「装得进来却用不起来」。
+     *
+     * 这些方法的返回结构极不统一：直接给数组、{musicList,isEnd}、
+     * {data:[]}、{songs:[]}、{data:{list:[]}}、分组 {title,data:[...]} 都有。
+     * 这里统一收敛成宿主已认识的 { data: [...], isEnd } 一种形状；
+     * 插件没导出某个方法时如实返回空，绝不伪造结果。
+     */
+    function listOf(res) {
+      if (Array.isArray(res)) return res;
+      if (!res || typeof res !== 'object') return [];
+      var keys = ['musicList', 'data', 'songs', 'list', 'result', 'sheets', 'playlists'];
+      for (var i = 0; i < keys.length; i++) {
+        var v = res[keys[i]];
+        if (Array.isArray(v)) return v;
+        if (v && typeof v === 'object' && Array.isArray(v.list)) return v.list;
+      }
+      return [];
+    }
+    function endOf(res, fallback) {
+      if (res && typeof res === 'object' && typeof res.isEnd === 'boolean') return res.isEnd;
+      return fallback === undefined ? true : fallback;
+    }
+    /** 推荐歌单标签 → 音栈 SheetTag */
+    function toTag(it, idx) {
+      var o = it || {};
+      var id = o.id === undefined || o.id === null ? '' : String(o.id);
+      return {
+        id: id,
+        name: String(o.title || o.name || o.label || id || ('标签' + (idx + 1))),
+        hot: !!o.hot
+      };
+    }
+    /** 榜单条目 → 音栈 SheetInfo（kind=rank，分组名留在 subtitle） */
+    function toTopSheet(it, sid, group) {
+      var o = it || {};
+      var id = o.id === undefined || o.id === null ? '' : String(o.id);
+      return {
+        id: id,
+        name: String(o.title || o.name || ''),
+        cover: String(o.cover || o.artwork || o.coverImgUrl || o.pic || ''),
+        description: String(group || o.description || ''),
+        platform: sid,
+        kind: 'rank',
+        trackCount: Number(o.musicNum || o.trackCount || o.songCount || 0),
+        playCount: Number(o.playCount || o.listenNum || 0),
+        creator: String(group || o.creator || ''),
+        updateTime: String(o.updateTime || ''),
+        subtitle: String(group || ''),
+        mfRaw: JSON.stringify(o)
+      };
+    }
+    /** getTopLists() 返回 [{title,data:[...]}] 分组，拍平成榜单卡片列表 */
+    function flattenTopLists(res, sid) {
+      var groups = Array.isArray(res) ? res : listOf(res);
+      var out = [];
+      for (var i = 0; i < groups.length; i++) {
+        var g = groups[i] || {};
+        var title = String(g.title || g.name || g.group || '');
+        var items = Array.isArray(g.data) ? g.data : (Array.isArray(g.list) ? g.list : []);
+        if (items.length === 0 && (g.id !== undefined || g.title !== undefined)) {
+          items = [g]; // 扁平写法：分组对象本身就是一条榜单
+        }
+        for (var j = 0; j < items.length; j++) {
+          out.push(toTopSheet(items[j], sid, title));
+        }
+      }
+      return out;
+    }
+    /** 把任意插件返回结构归一成 { data: SongInfo[], isEnd } */
+    function fromSongs(res, sid) {
+      return {
+        data: listOf(res).map(function (it) { return toSong(it, sid); }),
+        isEnd: endOf(res, true)
+      };
+    }
     return function (action, args) {
       var info = (args && args.info) || {};
       if (action === 'musicSearch') {
@@ -699,6 +779,109 @@
           };
         }), { data: [], isEnd: true });
       }
+      /* ---- 专辑搜索：官方 search(query, page, 'album') ---- */
+      if (action === 'albumSearch') {
+        if (typeof plugin.search !== 'function' || !supportsSearchType('album')) {
+          return Promise.resolve({ data: [], isEnd: true });
+        }
+        var albumSearchCall;
+        try { albumSearchCall = plugin.search(info.keyword || '', info.page || 1, 'album'); }
+        catch (e) { return guard(Promise.reject(e), { data: [], isEnd: true }); }
+        return guard(Promise.resolve(albumSearchCall).then(function (res) {
+          return {
+            data: listOf(res).map(function (it) { return toSheet(it, sourceId); }),
+            isEnd: endOf(res, true)
+          };
+        }), { data: [], isEnd: true });
+      }
+      /* ---- 专辑详情：官方 getAlbumInfo(albumItem, page) ---- */
+      if (action === 'albumInfo') {
+        if (typeof plugin.getAlbumInfo !== 'function') return Promise.resolve({ data: [], isEnd: true });
+        var albumCall;
+        try { albumCall = plugin.getAlbumInfo(restoreItem(info.mfRaw), info.page || 1); }
+        catch (e) { return guard(Promise.reject(e), { data: [], isEnd: true }); }
+        return guard(Promise.resolve(albumCall).then(function (res) {
+          return fromSongs(res, sourceId);
+        }), { data: [], isEnd: true });
+      }
+      /* ---- 榜单列表：官方 getTopLists() → 分组，拍平成 SheetInfo ---- */
+      if (action === 'topLists') {
+        if (typeof plugin.getTopLists !== 'function') return Promise.resolve({ data: [], isEnd: true });
+        var topListsCall;
+        try { topListsCall = plugin.getTopLists(); }
+        catch (e) { return guard(Promise.reject(e), { data: [], isEnd: true }); }
+        return guard(Promise.resolve(topListsCall).then(function (res) {
+          return { data: flattenTopLists(res, sourceId), isEnd: true };
+        }), { data: [], isEnd: true });
+      }
+      /* ---- 榜单详情：官方 getTopListDetail(topListItem, page) ---- */
+      if (action === 'topListDetail') {
+        if (typeof plugin.getTopListDetail !== 'function') return Promise.resolve({ data: [], isEnd: true });
+        var topDetailCall;
+        try { topDetailCall = plugin.getTopListDetail(restoreItem(info.mfRaw), info.page || 1); }
+        catch (e) { return guard(Promise.reject(e), { data: [], isEnd: true }); }
+        return guard(Promise.resolve(topDetailCall).then(function (res) {
+          return fromSongs(res, sourceId);
+        }), { data: [], isEnd: true });
+      }
+      /* ---- 推荐歌单标签：官方 getRecommendSheetTags() ---- */
+      if (action === 'recommendTags') {
+        if (typeof plugin.getRecommendSheetTags !== 'function') return Promise.resolve({ data: [], isEnd: true });
+        var tagsCall;
+        try { tagsCall = plugin.getRecommendSheetTags(); }
+        catch (e) { return guard(Promise.reject(e), { data: [], isEnd: true }); }
+        return guard(Promise.resolve(tagsCall).then(function (res) {
+          var raw = Array.isArray(res) ? res : listOf(res);
+          var pinned = (res && res.pinned) || null;
+          var arr = pinned ? [pinned].concat(raw) : raw;
+          return {
+            data: arr.map(function (it, i) { return toTag(it, i); }),
+            isEnd: true
+          };
+        }), { data: [], isEnd: true });
+      }
+      /* ---- 推荐歌单：官方 getRecommendSheets(tag, page) / getRecommendSheetsByTag ---- */
+      if (action === 'recommendSheets') {
+        var recFn = typeof plugin.getRecommendSheets === 'function' ? plugin.getRecommendSheets :
+          (typeof plugin.getRecommendSheetsByTag === 'function' ? plugin.getRecommendSheetsByTag : null);
+        if (recFn === null) return Promise.resolve({ data: [], isEnd: true });
+        var recCall;
+        try { recCall = recFn.call(plugin, info.tag || {}, info.page || 1); }
+        catch (e) { return guard(Promise.reject(e), { data: [], isEnd: true }); }
+        return guard(Promise.resolve(recCall).then(function (res) {
+          return {
+            data: listOf(res).map(function (it) { return toSheet(it, sourceId); }),
+            isEnd: endOf(res, true)
+          };
+        }), { data: [], isEnd: true });
+      }
+      /* ---- 单曲信息补全：官方 getMusicInfo(musicItem) ---- */
+      if (action === 'musicInfo') {
+        if (typeof plugin.getMusicInfo !== 'function') return Promise.resolve({ data: [], isEnd: true });
+        var musicInfoCall;
+        try { musicInfoCall = plugin.getMusicInfo(restoreMedia(info)); }
+        catch (e) { return guard(Promise.reject(e), { data: [], isEnd: true }); }
+        return guard(Promise.resolve(musicInfoCall).then(function (res) {
+          if (!res || typeof res !== 'object') return { data: [], isEnd: true };
+          return { data: [toSong(res, sourceId)], isEnd: true };
+        }), { data: [], isEnd: true });
+      }
+      /* ---- 导入歌单：官方 importMusicSheet(urlLike) → 歌曲数组 ----
+       * 最高频能力（193 份样本 175 份导出）。异常作为真实原因回传，
+       * 让音源页能力试跑能显示「为什么这个链接导不进来」，而不是笼统的空结果。
+       */
+      if (action === 'importSheet') {
+        if (typeof plugin.importMusicSheet !== 'function') return Promise.resolve({ data: [], isEnd: true });
+        var importCall;
+        try { importCall = plugin.importMusicSheet(info.keyword || ''); }
+        catch (e) { return guard(Promise.reject(e), { data: [], isEnd: true }, true); }
+        return guard(Promise.resolve(importCall).then(function (res) {
+          return {
+            data: listOf(res).map(function (it) { return toSong(it, sourceId); }),
+            isEnd: true
+          };
+        }), { data: [], isEnd: true }, true);
+      }
       return Promise.resolve({});
     };
   }
@@ -784,8 +967,28 @@
       try { pkg.default = pkg; } catch (e) { /* 冻结对象忽略 */ }
       return pkg;
     };
+    /* 插件要求的用户变量（cookie / apikey / token / 自建地址 …）由宿主按音源
+     * 隔离持久化后注入。旧版写死 {} 时，所有声明了 userVariables 的插件都拿不到
+     * 配置，取链 / 搜索必然失败 —— 等于「装得进来却用不起来」。
+     *
+     * 用 getter 而不是装载时的快照：用户在音源页改完配置后即时生效，不必重载脚本。
+     * 同时兼容三种真实写法：env.getUserVariables() / env.userVariables / env.AG_DEBUG。
+     */
+    var varsGetter = typeof host.getUserVariables === 'function' ? host.getUserVariables : null;
+    var varsStatic = (host.variables && typeof host.variables === 'object') ? host.variables : {};
+    function readUserVars() {
+      if (varsGetter !== null) {
+        try {
+          var v = varsGetter();
+          if (v && typeof v === 'object') return v;
+        } catch (e) { /* 宿主未就绪时退回静态值 */ }
+      }
+      return varsStatic;
+    }
     var env = {
-      getUserVariables: function () { return {}; },
+      getUserVariables: readUserVars,
+      userVariables: readUserVars(),
+      AG_DEBUG: false,
       appVersion: '1.0',
       os: 'android',
       lang: 'zh-CN'
@@ -817,9 +1020,55 @@
       throw new Error('插件缺少合法的 platform 字段');
     }
     var sourceId = 'mf:' + instId;
+    // actions 是洛雪 inited 协议里「宿主会向本源发哪些请求」的声明，既有链路
+    // （mfSearchable 推导 / LyricRepo 跳过判定 / Resolver）都按这三个值工作，
+    // 扩展能力绝不塞进来，避免悄悄改变取链与取词行为。
     var actions = ['musicUrl'];
     if (typeof plugin.getLyric === 'function') actions.push('lyric');
     if (typeof plugin.search === 'function') actions.push('musicSearch');
+
+    /* 能力声明：按插件「实际导出」生成，只用于音源页展示与试跑，不参与既有
+     * 取链 / 搜索判定。没导出的方法一律不列，绝不伪造能力。
+     */
+    var capabilities = [];
+    function hasFn(n) { return typeof plugin[n] === 'function'; }
+    if (hasFn('search')) {
+      capabilities.push('musicSearch');
+      var sst = plugin.supportedSearchType;
+      function allows(t) { return !(Array.isArray(sst) && sst.indexOf(t) < 0); }
+      if (allows('sheet')) capabilities.push('sheetSearch');
+      if (allows('artist')) capabilities.push('artistSearch');
+      if (allows('album')) capabilities.push('albumSearch');
+    }
+    if (hasFn('getLyric')) capabilities.push('lyric');
+    if (hasFn('getMusicSheetInfo')) capabilities.push('sheetInfo');
+    if (hasFn('getArtistWorks')) capabilities.push('artistWorks');
+    if (hasFn('getAlbumInfo')) capabilities.push('albumInfo');
+    if (hasFn('getTopLists')) capabilities.push('topLists');
+    if (hasFn('getTopListDetail')) capabilities.push('topListDetail');
+    if (hasFn('getRecommendSheetTags')) capabilities.push('recommendTags');
+    if (hasFn('getRecommendSheets') || hasFn('getRecommendSheetsByTag')) capabilities.push('recommendSheets');
+    if (hasFn('getMusicInfo')) capabilities.push('musicInfo');
+    if (hasFn('importMusicSheet')) capabilities.push('importSheet');
+
+    /* 插件声明的用户变量（userVariables: [{key,name|title,hint|description,type}]）。
+     * 只回传字段定义，不回传值；值由宿主按音源隔离存本机，不随脚本走。
+     */
+    var variableDefs = [];
+    if (Array.isArray(plugin.userVariables)) {
+      for (var vi = 0; vi < plugin.userVariables.length; vi++) {
+        var vd = plugin.userVariables[vi];
+        if (!vd || typeof vd !== 'object') continue;
+        var vk = String(vd.key === undefined || vd.key === null ? '' : vd.key);
+        if (vk.length === 0) continue;
+        variableDefs.push({
+          key: vk,
+          name: String(vd.name || vd.title || vk),
+          hint: String(vd.hint || vd.description || ''),
+          secret: String(vd.type || '').toLowerCase() === 'password'
+        });
+      }
+    }
     return {
       name: platform,
       platform: platform,
@@ -828,6 +1077,8 @@
       author: String(plugin.author || ''),
       sourceId: sourceId,
       actions: actions,
+      capabilities: capabilities,
+      variableDefs: variableDefs,
       hasSearch: typeof plugin.search === 'function',
       hasMedia: typeof plugin.getMediaSource === 'function',
       hasLyric: typeof plugin.getLyric === 'function',

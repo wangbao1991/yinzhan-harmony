@@ -2,7 +2,8 @@ import { common } from '@kit.AbilityKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { http } from '@kit.NetworkKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { SourceItem, newSource, LxInvokeInfo, SongInfo, SheetInfo, ArtistInfo, PagedSongs, SourceBackupItem } from '../common/Models';
+import { SourceItem, newSource, LxInvokeInfo, SongInfo, SheetInfo, SheetTag, ArtistInfo,
+  PagedSongs, SourceBackupItem, MfMeta, MfVarDef, MfProbeResult } from '../common/Models';
 import { PrefKeys, QUALITY_ORDER, normalizeQuality } from '../common/Constants';
 import { stableId } from '../common/Utils';
 import { Store } from './Store';
@@ -37,9 +38,21 @@ interface SourcePersist {
   message?: string;
 }
 
+/** 桥接层扩展能力回传的声明（loaded 消息里的 meta） */
+interface MfMetaRaw {
+  capabilities?: string[];
+  variableDefs?: MfVarDef[];
+}
+
 /** 桥接层 musicSearch action 的返回结构 */
 interface MfSearchResp {
   data?: SongInfo[];
+  isEnd?: boolean;
+}
+
+/** 扩展能力统一返回：歌曲 / 歌单榜单 / 标签三类都归到同一个 data 数组 */
+interface MfProbeResp {
+  data?: Object[];
   isEnd?: boolean;
 }
 
@@ -145,6 +158,8 @@ export class SourceRepo {
   private context: common.UIAbilityContext | null = null;
   private dir: string = '';
   private inited: Map<string, LxInitedInfo> = new Map<string, LxInitedInfo>();
+  /** 插件实际导出的能力清单与用户变量声明（loaded 时回传，仅内存，重启重新装载即有） */
+  private mfMetaMap: Map<string, MfMeta> = new Map<string, MfMeta>();
   private waiters: Map<string, Array<(info: LxInitedInfo) => void>> = new Map<string, Array<(info: LxInitedInfo) => void>>();
   private listeners: Array<() => void> = [];
   private activeId: string = '';
@@ -193,6 +208,9 @@ export class SourceRepo {
       this.applyInited(instId, info);
       this.notify();
     };
+    runner.onMeta = (instId: string, meta: string): void => {
+      this.applyMfMeta(instId, meta);
+    };
     runner.onLoaded = (instId: string, name: string, version: string, updateUrl: string,
       kind: string): void => {
       const item = this.find(instId);
@@ -228,6 +246,152 @@ export class SourceRepo {
       }
       this.notify();
     };
+  }
+
+  /* ---------------- MusicFree 扩展能力：声明 / 用户变量 / 试跑 ----------------
+   * 边界：只扩协议层与音源管理页，结果只进「播放 / 下载」既有出口。
+   * 不新增路由，不改发现 / 榜单 / 专辑 / 搜索页的任何数据源与版式。
+   */
+
+  /** loaded 带回的声明；解析失败按「无声明」处理，绝不伪造能力 */
+  private applyMfMeta(instId: string, meta: string): void {
+    let parsed: MfMetaRaw = {};
+    try {
+      parsed = JSON.parse(meta) as MfMetaRaw;
+    } catch (e) {
+      parsed = {};
+    }
+    const caps: string[] = [];
+    if (Array.isArray(parsed.capabilities)) {
+      for (const c of parsed.capabilities) {
+        if (typeof c === 'string' && c.length > 0 && caps.indexOf(c) < 0) {
+          caps.push(c);
+        }
+      }
+    }
+    const defs: MfVarDef[] = [];
+    if (Array.isArray(parsed.variableDefs)) {
+      for (const d of parsed.variableDefs) {
+        if (d === null || d === undefined) {
+          continue;
+        }
+        const key: string = typeof d.key === 'string' ? d.key : '';
+        if (key.length === 0) {
+          continue;
+        }
+        defs.push({
+          key: key,
+          name: typeof d.name === 'string' && d.name.length > 0 ? d.name : key,
+          hint: typeof d.hint === 'string' ? d.hint : '',
+          secret: d.secret === true
+        });
+      }
+    }
+    this.mfMetaMap.set(instId, { capabilities: caps, variableDefs: defs });
+    this.notify();
+  }
+
+  /** 该插件实际导出的能力 + 变量声明；未装载过时给空声明，不造假。
+   *  注意与静态 mfMeta(code, key)（解析脚本头注解）区分，两者用途不同。 */
+  mfMetaOf(instId: string): MfMeta {
+    const m = this.mfMetaMap.get(instId);
+    return m === undefined ? { capabilities: [], variableDefs: [] } : m;
+  }
+
+  /** 读取某音源的用户变量（JSON 对象文本，缺省 {}） */
+  mfUserVars(instId: string): string {
+    const raw = Store.get().getString(PrefKeys.MF_USER_VARS + instId, '');
+    return raw.length > 0 ? raw : '{}';
+  }
+
+  /**
+   * 保存用户变量并即时注入运行时。值是 JSON 对象文本；解析失败不落盘，
+   * 避免把用户输错的半截内容塞进插件环境。
+   */
+  async saveMfUserVars(instId: string, json: string): Promise<boolean> {
+    let normalized: string = json.trim();
+    if (normalized.length === 0) {
+      normalized = '{}';
+    }
+    try {
+      const v = JSON.parse(normalized) as Object;
+      if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+        return false;
+      }
+      normalized = JSON.stringify(v);
+    } catch (e) {
+      return false;
+    }
+    Store.get().put(PrefKeys.MF_USER_VARS + instId, normalized);
+    if (this.runner !== null) {
+      await this.runner.setUserVars(instId, normalized);
+    }
+    this.notify();
+    return true;
+  }
+
+  /** 装载前把已保存的变量灌进 LxRunner，保证插件顶层就能读到 */
+  private async injectUserVars(instId: string): Promise<void> {
+    if (this.runner !== null) {
+      await this.runner.setUserVars(instId, this.mfUserVars(instId));
+    }
+  }
+
+  /**
+   * 通用扩展能力试跑。返回归一成 { songs | sheets | tags | error }，
+   * 由音源页决定是「播放 / 下载」还是展示列表，不碰任何内容页。
+   * action 必须在插件声明的 capabilities 里，防止对不支持的插件发无效请求。
+   */
+  async probeMf(instId: string, action: string, info: LxInvokeInfo): Promise<MfProbeResult> {
+    const empty: MfProbeResult = { songs: [], sheets: [], tags: [], error: '' };
+    const runner = this.runner;
+    if (runner === null || !runner.isLoaded(instId)) {
+      return { songs: [], sheets: [], tags: [], error: '音源未加载' };
+    }
+    if (this.mfMetaOf(instId).capabilities.indexOf(action) < 0) {
+      return { songs: [], sheets: [], tags: [], error: '这个音源没有声明该能力' };
+    }
+    let raw: string;
+    try {
+      raw = await runner.invoke(instId, action, info, 20000);
+    } catch (e) {
+      return { songs: [], sheets: [], tags: [], error: e instanceof Error ? e.message : String(e) };
+    }
+    let resp: MfProbeResp = {};
+    try {
+      resp = JSON.parse(raw) as MfProbeResp;
+    } catch (e) {
+      return { songs: [], sheets: [], tags: [], error: '音源返回格式异常' };
+    }
+    const list: Object[] = Array.isArray(resp.data) ? resp.data : [];
+    if (action === 'recommendTags') {
+      const tags: SheetTag[] = [];
+      for (const o of list) {
+        const t = o as SheetTag;
+        if (t !== null && t !== undefined && typeof t.id === 'string') {
+          tags.push(t);
+        }
+      }
+      return { songs: [], sheets: [], tags: tags, error: '' };
+    }
+    if (action === 'topLists' || action === 'recommendSheets' || action === 'albumSearch') {
+      const sheets: SheetInfo[] = [];
+      for (const o of list) {
+        const s = o as SheetInfo;
+        if (s !== null && s !== undefined && typeof s.name === 'string') {
+          sheets.push(s);
+        }
+      }
+      return { songs: [], sheets: sheets, tags: [], error: '' };
+    }
+    const songs: SongInfo[] = [];
+    for (const o of list) {
+      const s = o as SongInfo;
+      if (s !== null && s !== undefined && typeof s.name === 'string' && s.name.length > 0) {
+        songs.push(s);
+      }
+    }
+    return { songs: songs, sheets: [], tags: [], error: '' };
   }
 
   async init(context: common.UIAbilityContext): Promise<void> {
@@ -373,6 +537,8 @@ export class SourceRepo {
       item.status = 'checking';
       // 先注册等待再注入：有的脚本在 runner() 里同步 send('inited')
       const promise = this.waitInited(item.id, LOAD_INIT_WAIT_MS);
+      // 插件声明的用户变量必须在脚本执行前就位（顶层可能直接读 env）
+      await this.injectUserVars(item.id);
       try {
         await runner.load(item.id, code, item.kind);
       } catch (e) {
@@ -457,6 +623,7 @@ export class SourceRepo {
     item.mfSearchable = item.kind === 'musicfree' && item.actions.indexOf('musicSearch') >= 0;
     item.status = 'checking';
     const promise = this.waitInited(item.id, waitMs);
+    await this.injectUserVars(item.id);
     try {
       await runner.load(item.id, code, item.kind);
     } catch (e) {

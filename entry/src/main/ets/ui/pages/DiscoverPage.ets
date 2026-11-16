@@ -21,7 +21,6 @@ import { EmptyView, LoadingBlock, GlassSheetCard, Cover, IconTap } from '../Comm
 const BATCH: number = 8;
 
 /**
- * 发现筛选带专用胶囊：和首页 / 设置页同一套青绿液态玻璃。
  * 必须是独立 @Component：@Builder 按值传参只在首次调用生效，
  * 而平台 / 分类的选中态由 @State 驱动，用 @Prop 才会跟着刷新。
  */
@@ -913,7 +912,7 @@ export struct DiscoverPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe + 8 })
+    .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe + 8, bottom: 150 })
     .backgroundColor('#00000000')
   }
 }

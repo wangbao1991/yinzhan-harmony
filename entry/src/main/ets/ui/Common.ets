@@ -535,7 +535,6 @@ export struct SheetCard {
 }
 
 /**
- * 带青绿液态玻璃卡座的歌单卡。
  *
  * 发现页「推荐歌单」和搜索页「歌单」以前各写各的：发现页在调用处套了一层
  * 玻璃卡座，搜索页只有一个裸 SheetCard，于是同一张歌单卡在两个页面一个
@@ -593,118 +592,6 @@ export struct GlassSheetCard {
 }
 
 /* ==================== 歌单广场大卡片（双列网格） ==================== */
-/**
- * 与 SheetCard 的区别：封面按父容器宽度自适应成 1:1 大图，
- * 播放量角标在左下角，标题固定两行，下面补「作者 · N首 · X次播放」。
- * 只展示接口真实返回的字段，缺哪个就省略哪个，不编造数字。
- */
-@Component
-export struct SheetGridCard {
-  @Prop @Watch('onSheetChange') sheet: SheetInfo = {
-    id: '', name: '', cover: '', description: '', platform: '', kind: '',
-    trackCount: 0, playCount: 0, creator: '', updateTime: '', subtitle: ''
-  };
-  @StorageProp('isDark') isDark: boolean = false;
-  @State imgFailed: boolean = false;
-  onTap: () => void = (): void => {
-  };
-
-  onSheetChange(): void {
-    this.imgFailed = false;
-  }
-
-  private p(): Palette {
-    return palette(this.isDark);
-  }
-
-  private meta(): string {
-    const parts: string[] = [];
-    if (this.sheet.creator.length > 0) {
-      parts.push(this.sheet.creator);
-    }
-    if (this.sheet.trackCount > 0) {
-      parts.push(this.sheet.trackCount.toString() + '首');
-    }
-    if (this.sheet.playCount > 0) {
-      parts.push(formatCount(this.sheet.playCount) + '次播放');
-    }
-    return parts.join(' · ');
-  }
-
-
-  build() {
-    Column({ space: 6 }) {
-      Stack({ alignContent: Alignment.BottomStart }) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .linearGradient({
-            angle: 135,
-            colors: [[seededGradient(this.sheet.id.length > 0 ? this.sheet.id : 'lx')[0], 0],
-              [seededGradient(this.sheet.id.length > 0 ? this.sheet.id : 'lx')[1], 1]]
-          })
-        if (this.sheet.cover.length > 0 && !this.imgFailed) {
-          Image(this.sheet.cover)
-            .width('100%')
-            .height('100%')
-            .objectFit(ImageFit.Cover)
-            .draggable(false)
-            .onError(() => {
-              this.imgFailed = true;
-            })
-        } else {
-          Column() {
-            Text('♪').fontSize(34).fontColor('#CCFFFFFF')
-          }
-          .width('100%')
-          .height('100%')
-          .justifyContent(FlexAlign.Center)
-        }
-        if (this.sheet.playCount > 0) {
-          Row({ space: 3 }) {
-            SymbolGlyph($r('sys.symbol.play_fill')).fontSize(10).fontColor(['#FFFFFFFF'])
-            Text(formatCount(this.sheet.playCount)).fontSize(11).fontColor('#FFFFFFFF')
-          }
-          .backgroundColor('#80000000')
-          .borderRadius(10)
-          .padding({ left: 7, right: 8, top: 3, bottom: 3 })
-          .margin({ left: 8, bottom: 8 })
-        }
-      }
-      .width('100%')
-      .aspectRatio(1)
-      .borderRadius(12)
-      .clip(true)
-      .border({ width: 0.8, color: withAlpha('#FFFFFFFF', this.isDark ? 0.10 : 0.35) })
-
-      Text(this.sheet.name)
-        .fontSize(FONT.callout)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.p().text)
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-        .height(38)
-
-      Text(this.meta().length > 0 ? this.meta() : ' ')
-        .fontSize(FONT.micro)
-        .fontColor(this.p().text3)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
-    .stateStyles({
-      normal: { .opacity(1).scale({ x: 1, y: 1 }) },
-      pressed: { .opacity(0.78).scale({ x: 0.97, y: 0.97 }) }
-    })
-    .animation({ duration: 140, curve: Curve.EaseOut })
-    .onClick(() => {
-      this.onTap();
-    })
-  }
-}
 
 /* ============================ 歌曲行 ============================ */
 @Component

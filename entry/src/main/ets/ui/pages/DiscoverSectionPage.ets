@@ -337,7 +337,7 @@ export struct DiscoverSectionPage {
                 LoadingBlock({ text: '正在加载更多' })
               }
               if (!this.hasMore && this.items.length > 0) {
-                Text('已经到底啦 · 官方该入口的全部内容')
+                Text('已经到底啦')
                   .fontSize(FONT.micro)
                   .fontColor(this.p().text3)
                   .width('100%')

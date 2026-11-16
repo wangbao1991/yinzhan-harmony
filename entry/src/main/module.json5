@@ -103,6 +103,10 @@
       {
         "name": "ohos.network.security.config",
         "resource": "$profile:network_config"
+      },
+      {
+        "name": "ohos.arkui.UIMaterial.state",
+        "value": "enable"
       }
     ],
     "requestPermissions": [

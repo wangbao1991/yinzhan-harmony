@@ -67,10 +67,3 @@ export function platformColor(id: string): string {
   return platformDef(id).color;
 }
 
-export function allPlatformIds(): string[] {
-  const ids: string[] = [];
-  for (const item of PLATFORMS) {
-    ids.push(item.id);
-  }
-  return ids;
-}

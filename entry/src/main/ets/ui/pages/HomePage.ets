@@ -104,13 +104,11 @@ export struct HomePage {
   @State favoriteCount: number = 0;
   @State historyCount: number = 0;
   @State localCount: number = 0;
-  @State downloadCount: number = 0;
   /** 收藏的「歌单」数量，和歌曲收藏分开统计；libraryVersion 一变就跟着刷新 */
   @State favoriteSheetCount: number = 0;
   @StorageProp('libraryVersion') @Watch('onLibraryChange') libraryVersion: number = 0;
-  /** 本地导入 / 下载完成都不走 Library，各自一个版本号，否则两个数字永远停在首帧 */
+  /** 本地导入不走 Library，单独一个版本号，否则「本地音乐 N 首」永远停在首帧 */
   @StorageProp('localVersion') @Watch('onDataChange') localVersion: number = 0;
-  @StorageProp('downloadVersion') @Watch('onDataChange') downloadVersion: number = 0;
   /** v2.65：应用回前台时对账一次，保证首页「歌单收藏 N 个」与账号一致 */
   @StorageProp('foregroundAt') @Watch('onAppForeground') foregroundAt: number = 0;
   private library: Library = Library.get();
@@ -145,7 +143,7 @@ export struct HomePage {
     this.refresh();
   }
 
-  /** 本地音乐 / 下载管理自己的版本号（二级页里导入、下载完成时推进） */
+  /** 本地音乐自己的版本号（二级页里导入完成时推进）；下载不再影响本页统计 */
   onDataChange(): void {
     this.refresh();
   }
@@ -180,7 +178,6 @@ export struct HomePage {
     this.favoriteCount = this.library.getFavorites().length;
     this.historyCount = this.library.getHistory().length;
     this.localCount = App.get().local.count();
-    this.downloadCount = App.get().downloads.doneCount();
     // 歌单收藏与歌曲收藏是两份数据，但共用 libraryVersion 广播
     this.favoriteSheetCount = this.library.getFavoriteSheets().length;
   }
@@ -302,9 +299,6 @@ export struct HomePage {
           .fontSize(FONT.callout)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.p().text)
-        Text('导入一个洛雪音源脚本才能播放歌曲')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -413,7 +407,7 @@ export struct HomePage {
           .height(FLOAT_SPACE)
       }
       .width('100%')
-      .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe, bottom: 20 })
+      .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe, bottom: 150 })
     }
     .width('100%')
     .height('100%')

@@ -6,6 +6,7 @@ import { NavParam, PlatformDef } from '../../common/Models';
 import { PLATFORMS, DISCOVER_PLATFORM_IDS, discoverPlatforms, platformName } from '../../common/Platform';
 import { App } from '../../core/App';
 import { Settings } from '../../core/Settings';
+import { TabBarHider } from '../../core/UiBar';
 import { Chip } from '../Common';
 import { SettingArrowRow } from '../SettingsCommon';
 
@@ -102,10 +103,6 @@ export struct SettingsPage {
         .fontSize(FONT.headline)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.p().text)
-        .width('100%')
-      Text('打开「发现」先看哪个平台的榜单和歌单')
-        .fontSize(FONT.caption)
-        .fontColor(this.p().text3)
         .width('100%')
       // 只列发现里真能出内容的平台：咪咕接口返空，留在选项里就是选完什么都没有
       Flex({ wrap: FlexWrap.Wrap }) {
@@ -271,16 +268,6 @@ export struct SettingsPage {
             Text('v' + APP_VERSION).fontSize(FONT.callout).fontColor(this.p().text3)
           }
           .width('100%')
-
-          Divider().color(this.p().line)
-
-          Text('音栈 · 鸿蒙原生音乐播放器。搜索与榜单直连各平台官方接口，' +
-            '播放地址由洛雪音源脚本提供；默认开启「智能达标寻源」：按你选的音质自动跨音源、' +
-            '跨平台找同款，绝不降到低音质，全找不到会明确提示。可在音源管理里关闭。')
-            .fontSize(FONT.caption)
-            .fontColor(this.p().text3)
-            .lineHeight(19)
-            .width('100%')
         }
         .width('100%')
         .padding(16)
@@ -293,12 +280,17 @@ export struct SettingsPage {
         Row().height(FLOAT_SPACE)
       }
       .width('100%')
-      .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe })
+      .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe, bottom: 150 })
     }
     .width('100%')
     .height('100%')
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
+    .onScrollFrameBegin((offset: number, state: ScrollState) => {
+      // 和首页/发现页一致：把滚动增量交给 TabBarHider，驱动底部导航伸展/收缩
+      TabBarHider.get().feed(offset);
+      return { offsetRemain: offset };
+    })
     .backgroundColor('#00000000')
     .bindSheet(this.sheetMode > 0, this.optionSheet(), {
       height: SheetSize.FIT_CONTENT,

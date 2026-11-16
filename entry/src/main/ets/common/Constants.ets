@@ -1,7 +1,6 @@
 /**
  * v5「墨栈 Inkstack」设计系统
  *
- * 从「会发光的青绿玻璃」退成「不反光的纸墨陈列面」：表面中性无彩、不透明、
  * 无渐变、无外光晕；层级靠字阶 / 字重 / 1vp 发丝线 / 留白，不靠底色差与投影。
  * 专辑封面是唯一自由彩色区，饱和色相压缩成小面积「信号琥珀」。
  * 全站跟随 @StorageProp('isDark')，明确不引入 backgroundBlurStyle。
@@ -10,7 +9,6 @@
  * 调用点与静态自检依赖它们），但返回值统一收敛为「中性纸墨实色」—— 去光化在
  * 这一层一次完成，调用点无需改动。四级明度阶 cardAlt < bg < bgSoft < card。
  *
- * v2.80：青绿液态玻璃整套换肤引擎已连根删除 —— 界面固定为「纸墨」单一风格，
  * 下面所有取色/取材质函数只保留纸墨实色实现，不再有第二套主题分发。
  */
 
@@ -127,10 +125,6 @@ export function inkSignalText(isDark: boolean): string {
 }
 /** 琥珀实底上的文字：只用墨色，浅深一致（7.57:1） */
 export const INK_ON_SIGNAL: string = '#FF191713';
-/** 反相墨块徽标上的文字 */
-export function inkOnAccent(isDark: boolean): string {
-  return isDark ? '#FF14161B' : '#FFF7F5F0';
-}
 
 /**
  * 材质档位（保留符号壳以兼容全站 @StorageProp('lightSense') 订阅）。
@@ -159,14 +153,12 @@ export function glassFill(isDark: boolean, level: number): string {
 
 /**
  * 表面：去光化。返回两段同色的中性实色，linearGradient 渲染即一块平涂纸墨面，
- * 不再有上沿亮线 / 中段通透 / 下沿反光 / 青绿染色。保留 2 段以兼容调用点签名。
  */
 export function glassSurface(isDark: boolean, level: number): Array<[ResourceColor, number]> {
   const c: string = isDark ? '#FF1E222A' : '#FFFDFCFA';
   return [[c, 0], [c, 1]];
 }
 
-/** 卡片兜底色：中性实色（万一渐变未被绘制，仍是纸墨面而非白板 / 青绿） */
 export function glassCardBase(isDark: boolean): string {
   return isDark ? '#FF1E222A' : '#FFFDFCFA';
 }
@@ -187,7 +179,6 @@ export function glassEdgeColor(isDark: boolean, level: number): EdgeColors {
   return { top: c, right: c, bottom: c, left: c };
 }
 
-/** 投影：中性紧投影（浅 r8/y2、深 r10/y4），去青绿外光晕、无离地浮起感 */
 export function glassShadow(isDark: boolean, level: number): ShadowOptions {
   return {
     radius: isDark ? 10 : 8,
@@ -285,7 +276,6 @@ export const PAGE_BOTTOM: number = 36;
  */
 export const MINI_BAR_SPACE: number = 64;
 
-export const TAB_ITEMS: string[] = ['首页', '发现', '设置'];
 
 /** 主题模式 */
 export enum ThemeMode {
@@ -298,7 +288,6 @@ export enum ThemeMode {
 export class PrefKeys {
   static readonly SOURCES: string = 'v4_sources';
   static readonly ACTIVE_SOURCE: string = 'v4_active_source';
-  static readonly SONG_CACHE: string = 'v4_song_cache';
   static readonly FAVORITES: string = 'v4_favorites';
   /** 收藏的「歌单」列表（平台歌单 / 榜单 / 专辑 / 歌手作品），与歌曲收藏分开存 */
   static readonly FAVORITE_SHEETS: string = 'v4_favorite_sheets';
@@ -315,23 +304,15 @@ export class PrefKeys {
   static readonly REMEMBER_POS: string = 'v4_remember_pos';
   static readonly IGNORE_INTERRUPT: string = 'v4_ignore_interrupt';
   static readonly THEME_MODE: string = 'v4_theme_mode';
-  static readonly THEME_COLOR: string = 'v4_theme_color';
   static readonly LOCAL_SONGS: string = 'v4_local_songs';
   static readonly DOWNLOADS: string = 'v4_downloads';
   static readonly SHOW_TRANS: string = 'v4_show_trans';
   static readonly LYRIC_SIZE: string = 'v4_lyric_size';
-  static readonly LYRIC_ALIGN: string = 'v4_lyric_align';
-  static readonly SEARCH_PLATFORMS: string = 'v4_search_platforms';
   /** 搜索页选中的源：'all' 或平台 id */
   static readonly SEARCH_SOURCE: string = 'v4_search_source';
   /** 玻璃质感强度：0 关 / 1 柔和 / 2 标准 / 3 强 */
   static readonly LIGHT_SENSE: string = 'v4_light_sense';
-  /** v2.56：光感四档移除的一次性提示是否已看过（旧 key 只读，不删，便于回滚） */
-  static readonly LIGHT_SENSE_NOTICE: string = 'v4_light_sense_notice';
   static readonly DISCOVER_PLATFORM: string = 'v4_discover_platform';
-  static readonly DOWNLOAD_DIR: string = 'v4_download_dir';
-  /** 真实收听统计（小时桶 / 歌手累计 / 已知歌曲 / 每日新歌） */
-  static readonly PLAY_STATS: string = 'v4_play_stats';
   /** 音源拿不到目标音质时，是否允许自动降级下载 */
   static readonly DOWNLOAD_DOWNGRADE: string = 'v4_download_downgrade';
   /** 启动时是否自动跑一轮轻量音源自检（默认关） */
@@ -358,7 +339,14 @@ export class PrefKeys {
   static readonly SMART_HUNT: string = 'v4_smart_hunt';
   /** 剩余多少秒开始预取下一首直链（默认开，弱网下提前跑完寻源） */
   static readonly PRELOAD_NEXT: string = 'v4_preload_next';
-  static readonly FIRST_LAUNCH: string = 'v4_first_launch';
+  /**
+   * 并行下载：同时最多跑几首（默认 3，可选 1~5）。
+   * 旧版在 Downloader 里写死 2，用户一次下载多首时只能干等排队，且没有入口可调。
+   * 这里做成持久化偏好，改完立即对排队任务补位，不需要重启、也不用等下一首完成。
+   */
+  static readonly DOWNLOAD_CONCURRENCY: string = 'v4_download_concurrency';
+  /** 听够整首 2/3 时自动把当前歌曲加入下载队列（默认关，下载页开关控制） */
+  static readonly AUTO_DOWNLOAD_ON_PLAY: string = 'v4_auto_download_on_play';
   /** v2.64 网易云本人账号：只存本机、不进备份。凭证 MUSIC_U / __csrf 等 */
   static readonly WY_COOKIE: string = 'v4_wy_cookie';
   static readonly WY_NICK: string = 'v4_wy_nick';
@@ -374,7 +362,26 @@ export class PrefKeys {
   static readonly WY_FAV_CLOUD: string = 'v4_wy_fav_cloud';
   static readonly WY_FAV_INIT: string = 'v4_wy_fav_init';
   static readonly WY_FAV_AT: string = 'v4_wy_fav_at';
+  /**
+   * MusicFree 插件用户变量（cookie / apikey / token / 自建地址 …）。
+   * 值按音源实例 id 拼 key 隔离，因此用「前缀」而不是固定键：
+   *   PrefKeys.MF_USER_VARS + <sourceId> → JSON 对象文本
+   * 与 WY_COOKIE 同属凭证，故意不进 Backup 白名单 —— 换机恢复不该把
+   * 一个账号的凭证串到另一个人身上，也避免备份文件里出现明文 token。
+   */
+  static readonly MF_USER_VARS: string = 'v4_mf_user_vars_';
 }
+
+/**
+ * 并行下载档位边界（v1.0）：
+ *  - MIN=1 保留「回到串行」的退路（弱网 / 音源风控时可降到一次一首）；
+ *  - MAX=5 是经验上限：再高会同时占满系统 DownloadTask 槽位、且多源取链
+ *    并发过高容易撞平台风控，反而更慢；
+ *  - DEFAULT=3 比旧的写死 2 更能体现「批量一起下」，又不至于太激进。
+ */
+export const DOWNLOAD_CONCURRENCY_MIN: number = 1;
+export const DOWNLOAD_CONCURRENCY_MAX: number = 5;
+export const DOWNLOAD_CONCURRENCY_DEFAULT: number = 3;
 
 /** 默认搜索热词（接口失败时兜底展示） */
 /**
@@ -383,8 +390,6 @@ export class PrefKeys {
  * 请求失败只给可重试提示，绝不再用固定词顶上（不造数）。
  */
 
-/** 歌单分类（网易云为主，其它平台回退到热门） */
-export const SHEET_CATS: string[] = ['全部', '华语', '流行', '摇滚', '民谣', '电子', '说唱', '古风', '轻音乐', '影视原声'];
 
 /**
  * 音质档位全集（从高到低）。

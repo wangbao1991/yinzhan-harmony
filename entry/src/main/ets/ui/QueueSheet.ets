@@ -149,9 +149,6 @@ export struct QueueSheet {
               Text('队列是空的')
                 .fontSize(FONT.caption)
                 .fontColor(this.p().text2)
-              Text('回到列表点一首歌就会填进来')
-                .fontSize(FONT.micro)
-                .fontColor(this.p().text2)
             }
             .width('100%')
             .layoutWeight(1)

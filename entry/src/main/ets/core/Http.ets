@@ -151,51 +151,6 @@ export async function getJsonWith<T>(url: string, referer: string, headers: Reco
   return JSON.parse(text) as T;
 }
 
-export async function postForm(url: string, body: string, referer: string = '',
-  timeout: number = 15000): Promise<string> {
-  const options = httpOptions();
-  options.method = 'POST';
-  options.body = body;
-  options.referer = referer;
-  options.timeout = timeout;
-  options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-  const result = await request(url, options);
-  if (!result.ok) {
-    throw new Error(result.error.length > 0 ? result.error : '请求失败');
-  }
-  return result.body;
-}
-
-/** 探测音频总体积：优先 Content-Range，其次 Content-Length；拿不到返回 0 */
-export async function audioTotalSize(url: string): Promise<number> {
-  const options = httpOptions();
-  options.headers['Range'] = 'bytes=0-0';
-  options.headers['User-Agent'] = 'okhttp/4.10.0';
-  options.timeout = 6000;
-  const result = await request(url, options);
-  if (!result.ok && result.status !== 206) {
-    return 0;
-  }
-  const range = result.headers['content-range'];
-  if (range !== undefined) {
-    const slash = range.lastIndexOf('/');
-    if (slash >= 0) {
-      const total = Number.parseInt(range.substring(slash + 1));
-      if (!Number.isNaN(total)) {
-        return total;
-      }
-    }
-  }
-  const length = result.headers['content-length'];
-  if (length !== undefined) {
-    const total = Number.parseInt(length);
-    if (!Number.isNaN(total)) {
-      return total;
-    }
-  }
-  return 0;
-}
-
 export interface ProbeResult {
   ok: boolean;
   /** 跟随跳转之后的真实地址（播放器要用这个） */
@@ -408,9 +363,4 @@ export async function probeAudioEx(url: string, durationSec: number = 0,
   }
   out.reason = '跳转次数过多';
   return out;
-}
-
-export async function probeAudio(url: string, durationSec: number = 0): Promise<boolean> {
-  const result = await probeAudioEx(url, durationSec);
-  return result.ok;
 }

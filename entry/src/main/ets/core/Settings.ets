@@ -1,4 +1,7 @@
-import { PrefKeys, ThemeMode, normalizeQuality } from '../common/Constants';
+import {
+  PrefKeys, ThemeMode, normalizeQuality,
+  DOWNLOAD_CONCURRENCY_MIN, DOWNLOAD_CONCURRENCY_MAX, DOWNLOAD_CONCURRENCY_DEFAULT
+} from '../common/Constants';
 import { Store } from './Store';
 
 /**
@@ -51,18 +54,6 @@ export class Settings {
     Store.get().put(PrefKeys.LIGHT_SENSE, level);
   }
 
-  /**
-   * v2.56：v2.52 移除光感四档时没有给任何提示，老用户升级后只会看到设置页
-   * 少了一块。这里只记录「提示已看过」，旧档位 key 仍只读不删（回滚可用）。
-   */
-  lightSenseNoticeSeen(): boolean {
-    return Store.get().getBool(PrefKeys.LIGHT_SENSE_NOTICE, false);
-  }
-
-  setLightSenseNoticeSeen(): void {
-    Store.get().put(PrefKeys.LIGHT_SENSE_NOTICE, true);
-  }
-
   quality(): string {
     return Store.get().getString(PrefKeys.QUALITY, '320k');
   }
@@ -78,6 +69,44 @@ export class Settings {
 
   setAllowDowngrade(value: boolean): void {
     Store.get().put(PrefKeys.DOWNLOAD_DOWNGRADE, value);
+  }
+
+  /**
+   * 并行下载：同时最多跑几首（默认 3，范围 1~5）。
+   * 读的时候也 clamp 一遍：旧版本 / 备份恢复可能写进来越界值或非整数，
+   * 直接交给 Downloader 会让 pump() 的 while 判断出诡异行为。
+   */
+  downloadConcurrency(): number {
+    const raw = Store.get().getNumber(PrefKeys.DOWNLOAD_CONCURRENCY, DOWNLOAD_CONCURRENCY_DEFAULT);
+    const n = Math.round(raw);
+    // 用 !(n >= MIN) 而不是 n < MIN：NaN / 脏值也会落到这里，回到最小档。
+    if (!(n >= DOWNLOAD_CONCURRENCY_MIN)) {
+      return DOWNLOAD_CONCURRENCY_MIN;
+    }
+    if (n > DOWNLOAD_CONCURRENCY_MAX) {
+      return DOWNLOAD_CONCURRENCY_MAX;
+    }
+    return n;
+  }
+
+  setDownloadConcurrency(value: number): void {
+    let n = Math.round(value);
+    if (!(n >= DOWNLOAD_CONCURRENCY_MIN)) {
+      n = DOWNLOAD_CONCURRENCY_MIN;
+    }
+    if (n > DOWNLOAD_CONCURRENCY_MAX) {
+      n = DOWNLOAD_CONCURRENCY_MAX;
+    }
+    Store.get().put(PrefKeys.DOWNLOAD_CONCURRENCY, n);
+  }
+
+  /** 听够整首 2/3 时自动把当前歌曲加入下载队列（默认关，下载页开关控制） */
+  autoDownloadOnPlay(): boolean {
+    return Store.get().getBool(PrefKeys.AUTO_DOWNLOAD_ON_PLAY, false);
+  }
+
+  setAutoDownloadOnPlay(value: boolean): void {
+    Store.get().put(PrefKeys.AUTO_DOWNLOAD_ON_PLAY, value);
   }
 
   /**
@@ -189,31 +218,6 @@ export class Settings {
     Store.get().put(PrefKeys.LYRIC_SIZE, value);
   }
 
-  /** 0 居中 / 1 左对齐 */
-  lyricAlign(): number {
-    return Store.get().getNumber(PrefKeys.LYRIC_ALIGN, 0);
-  }
-
-  setLyricAlign(value: number): void {
-    Store.get().put(PrefKeys.LYRIC_ALIGN, value);
-  }
-
-  searchPlatforms(): string[] {
-    const text = Store.get().getString(PrefKeys.SEARCH_PLATFORMS, '');
-    if (text.length === 0) {
-      return ['kw', 'tx', 'wy', 'kg', 'mg'];
-    }
-    try {
-      const list = JSON.parse(text) as string[];
-      return list.length > 0 ? list : ['kw', 'tx', 'wy', 'kg', 'mg'];
-    } catch (e) {
-      return ['kw', 'tx', 'wy', 'kg', 'mg'];
-    }
-  }
-
-  setSearchPlatforms(list: string[]): void {
-    Store.get().put(PrefKeys.SEARCH_PLATFORMS, JSON.stringify(list));
-  }
 
   discoverPlatform(): string {
     return Store.get().getString(PrefKeys.DISCOVER_PLATFORM, 'wy');

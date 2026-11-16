@@ -399,7 +399,7 @@ export struct WyAccountPage {
     Column({ space: 8 }) {
       SectionHeader({ title: '我的歌单', subtitle: this.mySheets.length.toString() + ' 个' })
       if (this.mySheets.length === 0) {
-        Text('暂无歌单，或登录状态已过期，可退出后重新登录')
+        Text('暂无歌单')
           .fontSize(FONT.caption)
           .fontColor(this.p().text3)
           .width('100%')
@@ -435,12 +435,6 @@ export struct WyAccountPage {
       this.syncCard()
       this.mySheetRail()
       // v2.73：我的歌单回到本页；每日推荐 / 推荐歌单仍只在首页实时展示
-      Text('每日推荐与推荐歌单已在首页实时展示，我的歌单来自你本人账号。凭证仅保存在本机；歌单收藏会自动与账号对齐，退出登录后仍留在本机。')
-        .fontSize(FONT.micro)
-        .fontColor(this.p().text3)
-        .lineHeight(17)
-        .width('100%')
-        .padding({ left: 14, right: 14, top: 4 })
       Row().height(FLOAT_SPACE)
     }
     .width('100%')
@@ -454,11 +448,6 @@ export struct WyAccountPage {
           SymbolGlyph($r('sys.symbol.person')).fontSize(18).fontColor([this.p().primary])
           Text('登录网易云账号').fontSize(FONT.body).fontWeight(FontWeight.Medium).fontColor(this.p().text)
         }
-        Text('用本人账号登录后，可获取基于你听歌喜好的每日推荐、私人歌单。支持二维码扫码与 Cookie 两种方式；凭证只保存在本机，不上传、不写入备份，可随时退出清除。')
-          .fontSize(FONT.caption)
-          .fontColor(this.p().text2)
-          .lineHeight(19)
-          .width('100%')
       }
       .width('100%')
       .padding(16)
@@ -538,11 +527,6 @@ export struct WyAccountPage {
           .fontSize(FONT.body)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.p().text)
-          .width('100%')
-        Text('扫码被风控或没有 App 时用：电脑浏览器登录 music.163.com，F12 → 应用 → Cookies，复制 MUSIC_U 的值（或整段 Cookie）粘贴到下方。')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
-          .lineHeight(17)
           .width('100%')
         TextInput({ text: this.cookieInput, placeholder: 'MUSIC_U=... 或完整 Cookie' })
           .fontSize(FONT.caption)

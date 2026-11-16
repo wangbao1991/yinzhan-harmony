@@ -46,6 +46,8 @@ interface NativeMessage {
   version?: string;
   updateUrl?: string;
   kind?: string;
+  /** MusicFree 插件的能力清单与用户变量声明（JSON 字符串，由 loaded 带回） */
+  meta?: string;
 }
 
 interface LxHttpOptions {
@@ -116,6 +118,8 @@ export class LxRunner {
   private loaded: Set<string> = new Set<string>();
   /** 脚本执行完成的时刻：用于「inited 迟迟不来」时按宽限期放行 */
   private loadedAt: Map<string, number> = new Map<string, number>();
+  /** 按音源实例隔离的用户变量 JSON；在 __load 前注入桥接页，供 env.getUserVariables() 读取 */
+  private userVars: Map<string, string> = new Map<string, string>();
   /**
    * 已上报 inited 的实例。
    *
@@ -136,6 +140,8 @@ export class LxRunner {
   onLog: ((instId: string, text: string) => void) | null = null;
   onLoaded: ((instId: string, name: string, version: string, updateUrl: string, kind: string) => void) | null = null;
   onScriptError: ((instId: string, error: string) => void) | null = null;
+  /** MusicFree 插件的能力清单 / 用户变量声明（loaded 时带回，JSON 字符串） */
+  onMeta: ((instId: string, meta: string) => void) | null = null;
 
   attach(controller: webview.WebviewController): void {
     this.controller = controller;
@@ -245,7 +251,11 @@ export class LxRunner {
     this.failed.delete(instId);
     this.inited.delete(instId);
     this.loadedAt.delete(instId);
-    const js = 'window.__load(' + JSON.stringify(instId) + ',' + JSON.stringify(code) + ',' +
+    // 用户变量与脚本在同一次 runJavaScript 里注入，顺序天然保证：插件顶层
+    // 读 env.getUserVariables() 时值已经在位。变量按 instId 隔离，互不串源。
+    const vars = this.userVars.get(instId) ?? '{}';
+    const js = 'window.__setUserVars(' + JSON.stringify(instId) + ',' + JSON.stringify(vars) + ');' +
+      'window.__load(' + JSON.stringify(instId) + ',' + JSON.stringify(code) + ',' +
       JSON.stringify(kind) + ')';
     try {
       await ctrl.runJavaScript(js);
@@ -261,6 +271,26 @@ export class LxRunner {
       if (this.activeInst.length === 0) {
         this.activeInst = instId;
       }
+    }
+  }
+
+  /**
+   * 写入某个音源的用户变量（JSON 字符串）。
+   * 装载前调用会随下一次 load 注入；装载后调用立即覆盖运行时，
+   * 用户改完配置不必重载脚本 —— env.getUserVariables() 是 getter。
+   */
+  async setUserVars(instId: string, varsJson: string): Promise<void> {
+    const safe = varsJson.length > 0 ? varsJson : '{}';
+    this.userVars.set(instId, safe);
+    const ctrl = this.controller;
+    if (ctrl === null || !this.ready || !this.loaded.has(instId)) {
+      return;
+    }
+    try {
+      await ctrl.runJavaScript('window.__setUserVars(' + JSON.stringify(instId) + ',' +
+        JSON.stringify(safe) + ')');
+    } catch (e) {
+      // 页面已销毁时忽略：下次 load 会用 userVars 里的值重新注入
     }
   }
 
@@ -402,6 +432,9 @@ export class LxRunner {
       case 'loaded':
         this.failed.delete(inst);
         this.loaded.add(inst);
+        if (this.onMeta !== null && msg.meta !== undefined && msg.meta.length > 0) {
+          this.onMeta(inst, msg.meta);
+        }
         if (this.onLoaded !== null) {
           this.onLoaded(inst, msg.name ?? '', msg.version ?? '', msg.updateUrl ?? '', msg.kind ?? 'lx');
         }

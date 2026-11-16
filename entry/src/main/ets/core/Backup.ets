@@ -4,7 +4,6 @@ import { PrefKeys } from '../common/Constants';
 import { SourceBackupItem } from '../common/Models';
 import { Store } from './Store';
 import { Library } from './Library';
-import { PlayStats } from './PlayStats';
 import { Settings } from './Settings';
 import { ImportIntent } from './ImportIntent';
 import { SourceRepo } from './SourceRepo';
@@ -59,10 +58,8 @@ const STRING_KEYS: string[] = [
   PrefKeys.PLAYLISTS,
   PrefKeys.HISTORY,
   PrefKeys.SEARCH_HISTORY,
-  PrefKeys.PLAY_STATS,
   PrefKeys.QUALITY,
   PrefKeys.SOURCE_MODE,
-  PrefKeys.SEARCH_PLATFORMS,
   PrefKeys.SEARCH_SOURCE,
   PrefKeys.DISCOVER_PLATFORM
 ];
@@ -72,7 +69,6 @@ const NUMBER_KEYS: string[] = [
   PrefKeys.THEME_MODE,
   PrefKeys.LIGHT_SENSE,
   PrefKeys.LYRIC_SIZE,
-  PrefKeys.LYRIC_ALIGN,
   PrefKeys.PLAY_MODE
 ];
 
@@ -87,7 +83,8 @@ const BOOL_KEYS: string[] = [
   PrefKeys.REMEMBER_SOURCE,
   PrefKeys.VERIFY_BEFORE_DOWNLOAD,
   PrefKeys.AUTO_FALLBACK_ON_FAILURE,
-  PrefKeys.PRELOAD_NEXT
+  PrefKeys.PRELOAD_NEXT,
+  PrefKeys.AUTO_DOWNLOAD_ON_PLAY
 ];
 
 export class Backup {
@@ -240,14 +237,13 @@ export class Backup {
   }
 
   /**
-   * 恢复后刷新内存态：Library / PlayStats 都是单例、启动时各读一次盘，
+   * 恢复后刷新内存态：Library 是单例、启动时读一次盘，
    * 不重读的话界面还会显示旧收藏。AppStorage 里的派生偏好同理。
    * 音源侧的内存态 / 运行时注入由 SourceRepo.restoreFromBackup() 自己收口。
    */
   static refreshAfterRestore(): void {
     Store.get().flush();
     Library.get().reload();
-    PlayStats.get().reload();
     const s = Settings.get();
     AppStorage.setOrCreate('qualityPref', s.quality());
     AppStorage.setOrCreate('lightSense', s.lightSense());

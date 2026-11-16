@@ -2,9 +2,7 @@
 
 用 ArkTS / ArkUI 从零编写的 HarmonyOS / OpenHarmony 原生音乐播放器。Stage 模型、API 26（OpenHarmony 7.0）、零三方依赖、可离线命令行构建。
 
-根目录源码版本：**v1.0**（`versionName 1.0` / `versionCode 67`）
-
-最新交付快照：**v1.2.0**（`versionName 1.2.0` / `versionCode 87`），见 [`release/v1.2.0-dock-taller`](release/v1.2.0-dock-taller)。
+当前版本：**v1.2.0**（`versionName 1.2.0` / `versionCode 87`）—— 仓库根目录即该版本的完整源码。
 
 ## 这是什么
 
@@ -17,6 +15,7 @@
 - **下载**：下载管理、真实音质标注；把歌名 / 歌手 / 专辑与歌词**写进音频文件内部**（mp3 用 ID3v2.3 `USLT`、flac 用 Vorbis Comment `LYRICS`），下载目录只产出一个文件，不生成额外 `.lrc`
 - **音乐库**：收藏歌单、最近播放、本地音乐、左滑与多选管理
 - **账号**：网易云账号登录，歌单收藏与云端账号之间的前台定时对账
+- **评论**：歌曲评论列表与分页加载
 - **外观**：纸墨风格、深浅色模式
 - **工程**：零三方依赖、命令行离线构建、静态自检护栏（`scripts/selfcheck.py`）
 
@@ -27,12 +26,11 @@
 ```bash
 bash scripts/env/setup_env_26.sh     # 首次搭建 OpenHarmony 7.0 / API 26 环境（约 3 GB）
 source scripts/env/env.sh            # 每个新终端载入一次
-bash scripts/env/build_release.sh    # 干净构建 → 签名（如有证书）→ 验签 → 版本核对 → 自检
+bash scripts/env/build_release.sh    # 干净构建 → pack.info/module.json 版本核对 → 自检
 ```
 
 - `compatibleSdkVersion` 为 `26.0.0`，API 12 / API 24 工具链无法构建。
-- 工程**不含任何签名证书**。缺少 `signing/app-chain.pem` 与 `signing/profile.p7b` 时，流水线会跳过签名并产出 `unsigned HAP`；正式分发请用自己的 AGC / DevEco 证书重新签名。
-- `scripts/sign_hap.sh` 里的口令是 OpenHarmony SDK **公共调试密钥的默认公开值**，不是私有凭证。
+- 工程**不含任何签名证书**，流水线统一产出 `unsigned HAP`；签名请用自己的 AGC 证书或 DevEco Studio 完成。本版本号在 `AppScope/app.json5`，脚本自动读取，升版后无需改脚本。
 - 完整避坑说明见 [`docs/编译环境重建指南（避坑版）.md`](docs/编译环境重建指南（避坑版）.md)，音源协议与差异分析见 [`docs/音源协议兼容分析（整合版）.md`](docs/音源协议兼容分析（整合版）.md)。
 
 ## 目录结构
@@ -41,23 +39,20 @@ bash scripts/env/build_release.sh    # 干净构建 → 签名（如有证书）
 AppScope/                  应用级配置与资源
 entry/src/main/ets/        ArkTS 源码（common / core / ui / entryability）
 entry/src/main/resources/  资源、图标、rawfile 音源沙箱
-scripts/                   构建、签名、自检、图标工具
+scripts/                   构建流水线、静态自检、图标工具
 docs/                      编译环境重建指南、音源协议分析
 hvigor/                    构建配置
 ```
 
 ## 发布快照
 
-`release/` 下按版本存放可直接取用的构建产物（源码工程 zip + HAP + 校验值），根目录源码保持不变：
+仓库根目录就是最新版源码；`release/` 只存放当前版本的**可直接取用产物**：
 
 | 目录 | 版本 | 内容 |
 | --- | --- | --- |
-| [`release/v1.2.0-dock-taller`](release/v1.2.0-dock-taller) | `87 / 1.2.0` | 底栏重构基线，迷你播放条与页签栏加宽至 52vp；含**已签名 HAP**（可直接侧载）与 unsigned |
-| [`release/v1.0-batch-download-perf`](release/v1.0-batch-download-perf) | `67 / 1.0` | 批量下载性能返工后快照 |
-| [`release/v1.0-cleanup10`](release/v1.0-cleanup10) | `67 / 1.0` | 代码审计清理 10 组废弃代码后快照 |
-| [`release/v1.0-source-capability`](release/v1.0-source-capability) | `67 / 1.0` | 音源能力分派版本快照 |
+| [`release/v1.2.0-dock-taller`](release/v1.2.0-dock-taller) | `87 / 1.2.0` | 源码工程 zip + **已签名 HAP**（可直接侧载）+ unsigned HAP + 校验值 |
 
-各目录内 `SHA256SUMS.txt` 为对应二进制的校验值；签名材料不随仓库分发，正式分发请用自有 AGC 证书对 unsigned 包重签。
+也可以在 [Releases](https://github.com/wangbao1991/yinzhan-harmony/releases) 直接下载 `YinZhan-v1.2.0-signed.hap`。签名材料不随仓库分发，正式分发请用自有 AGC 证书对 unsigned 包重签。
 
 ## 第三方组件
 

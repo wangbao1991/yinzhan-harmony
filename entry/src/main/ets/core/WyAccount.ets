@@ -193,25 +193,6 @@ export class WyAccount {
     return true;
   }
 
-  /** 主动刷新一次登录态，Cookie 失效时返回 false（页面可提示重新登录） */
-  async verify(): Promise<boolean> {
-    this.init();
-    if (this.cookieText.length === 0) {
-      return false;
-    }
-    const data: Record<string, Object> = {};
-    const reply = await wyPost('/weapi/w/nuser/account/get', data, this.cookieText);
-    if (!reply.ok) {
-      return false;
-    }
-    try {
-      const obj = JSON.parse(reply.body) as Record<string, Object>;
-      const profile = obj['profile'];
-      return profile !== null && profile !== undefined;
-    } catch (e) {
-      return false;
-    }
-  }
 
   logout(): void {
     this.init();

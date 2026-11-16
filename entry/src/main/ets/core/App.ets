@@ -4,7 +4,6 @@ import { SongInfo, SheetInfo, SheetParam, ArtistInfo, ArtistParam, SearchParam, 
 import { DiscoverMore, DiscoverMoreParam } from '../common/Discover';
 import { Store } from './Store';
 import { Library } from './Library';
-import { PlayStats } from './PlayStats';
 import { SourceRepo } from './SourceRepo';
 import { LxRunner } from './LxRunner';
 import { Player } from './Player';
@@ -82,20 +81,39 @@ export class App {
     // 后台补到封面后 CoverRepo 递增它，封面组件订阅刷新
     AppStorage.setOrCreate('coverVersion', 0);
     this.library.init();
-    // 统计层要在 Library 之后（要把旧播放历史并入已知歌曲）、Player 之前
-    PlayStats.get().init();
     this.player.init(context);
-    this.downloads.init(context);
+    // 本地音乐先 init：Downloader.init() 只读自己的队列，但 LocalRepo 要在任何页面
+    // 读「本地音乐 N 首」之前就绪；顺序保持「先库后队列」。
     await this.local.init(context);
+    // 2026-11-16：老版本把下载完成的歌自动登记进了本地音乐，启动时摘掉这批历史条目
+    // （只删记录不删文件）。返回值必须交给下载器补成 done 记录 —— 「完成即出队」那版
+    // 队列里是没有记录的，只摘不放会让歌同时从本地音乐和下载页消失、文件还白占空间。
+    const legacyLocal = this.local.detachExternal();
+    this.downloads.init(context);
+    this.downloads.absorbLegacy(legacyLocal);
     this.player.setLocalPathProvider((song: SongInfo): string => {
-      if (song.source === 'local') {
-        return this.local.pathOf(song.id);
+      // 先查本地音乐、再查下载队列，不按 source 分流：补录的历史条目 source 已不可考，
+      // 按 source 分流会让它们「列表里能看见、点一下没声音」。
+      const local = this.local.pathOf(song.id);
+      if (local.length > 0) {
+        return App.playablePath(local);
       }
-      const task = this.downloads.find(song.id);
-      if (task !== null && task.path.length > 0) {
-        return App.playablePath(task.path);
+      const path = this.downloads.pathOf(song.id);
+      if (path.length > 0) {
+        return App.playablePath(path);
       }
       return '';
+    });
+    // 听够 2/3 自动下载：开关 / 去重 / 入队集中在这里，Player 只负责回调一次。
+    // 本地歌、已下载、已在队列、空 id 全部跳过；不弹错误卡片、不打断播放。
+    this.player.setAutoDownloadHandler((song: SongInfo): void => {
+      if (!Settings.get().autoDownloadOnPlay()) {
+        return;
+      }
+      if (song.source === 'local' || song.id.length === 0 || this.hasDownload(song)) {
+        return;
+      }
+      this.downloads.enqueue(song);
     });
     // 沙箱可能比界面先就绪（比如冷启动很快），这里补一次
     if (this.runner.isReady()) {

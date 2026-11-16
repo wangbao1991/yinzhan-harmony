@@ -8,7 +8,8 @@ import { App } from '../core/App';
 import { ImportIntent } from '../core/ImportIntent';
 import { TabBarHider } from '../core/UiBar';
 import { SourceHost } from '../ui/SourceHost';
-import { TabBar, MiniPlayer } from '../ui/Shell';
+import { NavPager } from '../ui/NavPager';
+import { BottomDock } from '../ui/BottomDock';
 import { QueueOverlay } from '../ui/QueueOverlay';
 import { HomePage } from '../ui/pages/HomePage';
 import { DiscoverPage } from '../ui/pages/DiscoverPage';
@@ -59,23 +60,6 @@ const PLAYER_SHARED_ID: string = 'yinzhan_player_shared';
 struct Index {
   @StorageProp('isDark') @Watch('syncSystemBar') isDark: boolean = false;
   @StorageProp('lightSense') lightLevel: number = 3;
-  /** 横滑连续位置（当前页 + 拖动比例），1:1 跟手，去重后才广播 */
-  private swipeAt: number = 0;
-  /** 手势空闲归位定时器：松手后收不到回调时兜底，把指示器落到整数页 */
-  private swipeIdle: number = -1;
-  /**
-   * 是否处于手指拖动阶段。
-   * 拖动中指示器必须零延迟（底栏动画时长读这个值），
-   * 松手后的归位才允许补间——否则每帧目标都被缓动追一遍，
-   * 观感就是「先蓄力、再冲刺」。
-   */
-  private dragging: boolean = false;
-  /** 上一次落位的时刻：用来区分「新手势」和「松手后的残余回调」 */
-  private settleTs: number = 0;
-  /** Swiper 主轴长度（vp），用于把 currentOffset 换成页比例 */
-  @State pageW: number = 0;
-  /** 底栏收起进度 / 是否在播：收起后播放条要沉进底栏那一行 */
-  @StorageProp('tabBarProgress') barProgress: number = 0;
   @StorageProp('hasSong') hasSong: boolean = false;
   /**
    * 二级页栈深。0 = 在一级页，> 0 = 压着歌单/榜单/下载等页面。
@@ -84,8 +68,9 @@ struct Index {
   @StorageProp('navDepth') navDepth: number = 0;
   @State ready: boolean = false;
   @State tab: number = 0;
-  /** 一级页容器：横滑切页 / 点底栏切页都走它 */
-  private swiper: SwiperController = new SwiperController();
+  // 一级页横滑跟手、页签高亮/指示条/流光、MiniBar 展开收起全部由官方 HdsTabs
+  // 原生接管（见 HdsNav.ets）；旧的 swipePos/tabsWidth/tabsController/barProgress/
+  // barStyle 等自绘联动状态一并删除，不再需要。
   @State @Watch('syncSystemBar') playerShow: boolean = false;
   /** geometryTransition 绑定 id：只在转场闭包内赋值，onFinish 清空（官方建议） */
   @State playerGeomId: string = '';
@@ -151,9 +136,8 @@ struct Index {
     App.get().player.setErrorReporter((message: string): void => {
       this.showToast(message);
     });
-    // 指示器位置先落一个整数，避免首帧读到空值停在 0 之外
-    AppStorage.setOrCreate('tabSwipe', 0);
-    AppStorage.setOrCreate('tabDur', 0);
+    // 官方 HdsTabs 风格下，页签同步由 Tabs 原生管理；MiniBar 形态默认 EXPAND。
+    AppStorage.setOrCreate('tabBarProgress', 0);
     // v2.29：移除默认启动页配置，冷启动固定落首页（tab 0）。
     this.switchTab(0);
     const context = getContext(this) as common.UIAbilityContext;
@@ -249,9 +233,13 @@ struct Index {
       curve: curves.interpolatingSpring(0, 1, 342, 38),
       onFinish: (): void => {
         this.playerGeomId = '';
+        AppStorage.setOrCreate('playerGeomId', '');
       }
     }, (): void => {
       this.playerGeomId = PLAYER_SHARED_ID;
+      // miniBarBuilder 在 HdsNav 组件内部，跨组件拿不到 Index 的 @State，
+      // 用 AppStorage 把同一 id 传给它的根 Stack，形成小形态↔全屏页一镜到底。
+      AppStorage.setOrCreate('playerGeomId', PLAYER_SHARED_ID);
       this.playerShow = show;
     });
   }
@@ -311,151 +299,10 @@ struct Index {
     });
   }
 
-  /**
-   * 广播跟手位置：夹在 0~页数-1，变化太小就不写，避免每帧都触发重绘。
-   *
-   * 另外单帧最多走 0.5 格。正常拖动一帧走不到半格（那要 10000vp/s 以上的速度），
-   * 所以这个限幅只在「基准页切换、currentOffset 重算」那种整格跳变时生效，
-   * 把瞬移抹成快速追赶，不会出现指示器一下子蹦到最右边。
-   */
-  private pushSwipe(at: number): void {
-    const v = Math.max(0, Math.min(2, at));
-    // 一帧内跳超过 0.3 格（≈ 900vp/s 以上），只可能是基准页切换、
-    // 索引和偏移量换了参照系，不是手指真正走出来的位移。
-    // 这种值整帧丢掉等下一帧，绝不能「跟一半」——
-    // 跟一半就是往回退半格，用户看到的就是那下回弹。
-    if (Math.abs(v - this.swipeAt) > 0.3) {
-      return;
-    }
-    if (Math.abs(v - this.swipeAt) < 0.002) {
-      return;
-    }
-    this.swipeAt = v;
-    AppStorage.setOrCreate('tabSwipe', v);
-  }
-
-  /** 进入拖动阶段：底栏据此把指示器动画时长切到 0，做到 1:1 跟手 */
-  private beginDrag(): void {
-    if (!this.dragging) {
-      this.dragging = true;
-      // 拖动阶段：补间时长 0，指示器位置直接等于手指位置
-      AppStorage.setOrCreate('tabDur', 0);
-    }
-  }
-
-  /**
-   * 落到整数页。
-   * 先退出拖动阶段再改位置，这样这一次位移走的是补间（平滑归位），
-   * 而不是零时长的硬跳。
-   */
-  private settleSwipe(index: number): void {
-    this.settleTs = Date.now();
-    if (this.swipeIdle !== -1) {
-      clearTimeout(this.swipeIdle);
-      this.swipeIdle = -1;
-    }
-    if (this.dragging) {
-      this.dragging = false;
-    }
-    // 先声明这一段要走多长，再改位置：底栏的 @Watch 触发时读到的就是新时长
-    AppStorage.setOrCreate('tabDur', PAGE_ANIM_MS);
-    const target = Math.max(0, Math.min(2, index));
-    if (Math.abs(this.swipeAt - target) > 0.001) {
-      this.swipeAt = target;
-      AppStorage.setOrCreate('tabSwipe', target);
-    }
-  }
-
-  /**
-   * 接管：Swiper 决定翻页、动画开始的那一刻调用。
-   *
-   * 这是「停顿感」的正解。以前等 onAnimationEnd 才把指示器挪到目标页，
-   * 于是页面在动的那 300ms 里指示器完全静止，等页面停住它才补过去——
-   * 用户看到的就是「滑到一半停一下、然后突然窜过去」。
-   * 现在动画一开始就拿到 targetIndex，立刻把位置改成目标值，
-   * 底栏用 300ms + Friction（与 Swiper 完全同长同曲线）补间过去，两头同时收。
-   */
-  private beginRelease(target: number): void {
-    this.settleTs = Date.now();
-    if (this.swipeIdle !== -1) {
-      clearTimeout(this.swipeIdle);
-      this.swipeIdle = -1;
-    }
-    if (this.dragging) {
-      this.dragging = false;
-    }
-    AppStorage.setOrCreate('tabDur', PAGE_ANIM_MS);
-    // 这里无条件写：拖动最后一帧的残余误差（<0.001 格）也要拉正，
-    // 否则指示器会永远差一丝，凑不到格子正中
-    const to = Math.max(0, Math.min(2, target));
-    this.swipeAt = to;
-    AppStorage.setOrCreate('tabSwipe', to);
-  }
-
-  /**
-   * 兜底归位。
-   *
-   * onGestureSwipe 只在手指拖动时回调，松手之后那段回弹/整页动画完全收不到，
-   * 所以拖动一停就挂一个定时器。但**必须等到 Swiper 自己的动画跑完**：
-   * 它的 duration 是 300ms，如果 120ms 就把指示器拉回旧页，
-   * 动画结束时 onChange 再把页面翻过去，指示器就会「回弹一下、再蹦过去」。
-   * 340ms 留出动画时间再加一点余量，正常情况已经在 onAnimationEnd 里落位，
-   * 这里只是兜底。
-   */
-  private armSwipeIdle(): void {
-    if (this.swipeIdle !== -1) {
-      clearTimeout(this.swipeIdle);
-    }
-    this.swipeIdle = setTimeout((): void => {
-      this.swipeIdle = -1;
-      // 手指又按下去时不抢位置
-      if (!this.dragging) {
-        this.settleSwipe(this.tab);
-      }
-    }, PAGE_ANIM_MS + 220);
-  }
-
-  /**
-   * 与 Shell 里的 TabBar 同一套口径。
-   * 两种情况不收起：没有在播的歌（没有可合并的播放条）、
-   * 压着二级页（这时底栏本来就不渲染，收起了没人接手）。
-   */
-  /**
-   * 外壳播放条自己的分段进度。
-   *
-   * 底栏那边的收起是分层的（文字→图标→底板→圆按钮+胶囊），
-   * 这条悬浮播放条也要错开：它在 0.06 就开始退，0.54 退干净，
-   * 比底栏里的胶囊（0.46 才起步）早一点点，中间是低透明度的交叉，
-   * 不是「上面一条突然消失、下面一条突然出现」。
-   */
-  private easeOutStage(v: number): number {
-    return 1 - Math.pow(1 - v, 3);
-  }
-
-  private barStage(from: number, to: number): number {
-    const c = this.shellCollapse();
-    if (to <= from) {
-      return c >= to ? 1 : 0;
-    }
-    return Math.max(0, Math.min(1, (c - from) / (to - from)));
-  }
-
-  private shellCollapse(): number {
-    if (!this.hasSong || this.navDepth !== 0) {
-      return 0;
-    }
-    return Math.max(0, Math.min(1, this.barProgress));
-  }
-
   private switchTab(index: number): void {
-    // 点底栏切页：交给 Swiper 走同一段过场，页面和指示器才会同步移动。
-    // 首次进来 index 就等于当前 tab，这时只复位收起进度，不要去驱动容器。
-    if (index !== this.tab) {
-      this.tab = index;
-      AppStorage.setOrCreate('tabSwipe', index);
-      this.swiper.changeIndex(index);
-    }
-    // 切 Tab 恢复底栏，新页面从完整布局开始
+    // 底栏页签 → NavPager（Swiper）翻页，两边都读 this.tab，闭环。
+    this.tab = index;
+    // 切页恢复底栏形态，新页面从完整布局开始。
     TabBarHider.get().reset();
     AppStorage.setOrCreate('tabIndex', index);
   }
@@ -581,110 +428,57 @@ struct Index {
     return new SearchParam('');
   }
 
+  // ── 一级页内容 builder：作为 @BuilderParam 注入 HdsNav ──
+  @Builder
+  homeContent() {
+    HomePage({
+      onOpenSearch: (keyword: string): void => {
+        App.get().openSearch(keyword);
+      }
+    })
+      .width('100%')
+      .height('100%')
+  }
+
+  @Builder
+  discoverContent() {
+    DiscoverPage()
+      .width('100%')
+      .height('100%')
+  }
+
+  @Builder
+  settingsContent() {
+    SettingsPage()
+      .width('100%')
+      .height('100%')
+  }
+
+  /**
+   * 一级页翻页容器（只翻页）。
+   * 底栏（页签胶囊 + 迷你播放条）已拆到根 Stack 的 BottomDock，见下方 build()。
+   */
   @Builder
   tabContent() {
-    // 三个一级页常驻，只切换可见性。
-    // 以前用 if / else if 按 tab 分支，切换时整棵子树销毁重建，
-    // 首页每次回来都要重新拉榜单和最近播放（「正在加载今日推荐」那一下），
-    // 搜索页的历史/结果和列表滚动位置也会丢。
-    //
-    // 第二个位次是「发现」：榜单和推荐歌单本来就是每天要看的东西，
-    // 埋在首页「更多」里点两层才到，改成一级入口；搜索是一次性动作，
-    // 让位给发现，改为从首页搜索框 push 二级页（见 pageMap 的 'search'）。
-    // 「音乐库」已并入首页（四宫格 + 自建歌单），不再单独占位。
-    //
-    // 容器从 Stack 换成 Swiper：左右横滑就能切页，手势和页面位移都由它接管。
-    // 三页仍然全程常驻（Swiper 不做懒加载），所以「切回来不重新拉数据」这条没有丢。
-    Swiper(this.swiper) {
-      HomePage({
-        onOpenSearch: (keyword: string): void => {
-          App.get().openSearch(keyword);
-        }
-      })
-        .width('100%')
-        .height('100%')
-
-      DiscoverPage()
-        .width('100%')
-        .height('100%')
-
-      SettingsPage()
-        .width('100%')
-        .height('100%')
-    }
-    .width('100%')
-    .height('100%')
-    .index(this.tab)
-    .loop(false)
-    .indicator(false)
-    .duration(PAGE_ANIM_MS)
-    .curve(Curve.Friction)
-    // 跟手：用 onGestureSwipe 而不是 onContentDidScroll。
-    // 这个回调的第一个参数明确是「手势开始前的页索引」（稳定基准），
-    // extraInfo.currentOffset 是当前页相对主轴起点的偏移，单位 vp、左滑为负，
-    // 两个都是能直接算的值，不依赖那个实测对不上的 position 比例。
-    .onAreaChange((oldArea: Area, newArea: Area) => {
-      const w = Number(newArea.width);
-      if (w > 0 && Math.abs(w - this.pageW) > 0.5) {
-        this.pageW = w;
+    NavPager({
+      selected: this.tab,
+      onChangeTab: (index: number): void => {
+        this.tab = index;
+        AppStorage.setOrCreate('tabIndex', index);
+        TabBarHider.get().reset();
+      },
+      content0: (): void => {
+        this.homeContent();
+      },
+      content1: (): void => {
+        this.discoverContent();
+      },
+      content2: (): void => {
+        this.settingsContent();
       }
     })
-    // 手指是否还在屏幕上，以触摸事件为准。
-    // onGestureSwipe 在松手后的收尾阶段仍可能回调，那时给出的偏移量
-    // 已经不是手指位置了；照着它走，指示器就会被拽回去（回弹）。
-    .onTouch((e: TouchEvent) => {
-      if (e.type === TouchType.Down) {
-        this.beginDrag();
-        if (this.swipeIdle !== -1) {
-          clearTimeout(this.swipeIdle);
-          this.swipeIdle = -1;
-        }
-      } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
-        // 松手：位置交给 onAnimationEnd 落位，这里只挂兜底
-        this.armSwipeIdle();
-      }
-    })
-    .onGestureSwipe((index: number, extra: SwiperAnimationEvent) => {
-      // 手指不在屏幕上时的残余回调一律忽略。
-      // 兜底：万一个别机型上 onTouch 没送到，距上次落位足够久也当成新手势，
-      // 否则会退化成「完全不跟手」。
-      if (!this.dragging) {
-        if (Date.now() - this.settleTs > 400) {
-          this.beginDrag();
-        } else {
-          return;
-        }
-      }
-      const w = this.pageW > 0 ? this.pageW : 360;
-      // 左滑 offset 为负 → at 变大：手指走到哪，指示器就跟到哪
-      this.pushSwipe(index - extra.currentOffset / w);
-    })
-    // 动画「开始」就接管：拿到 targetIndex，指示器立刻朝目标补间。
-    // 等 onAnimationEnd 才动，中间那 300ms 就是可见的停顿。
-    .onAnimationStart((index: number, targetIndex: number, extraInfo: SwiperAnimationEvent) => {
-      this.beginRelease(targetIndex);
-    })
-    // 结束只做兜底校正（正常情况下位置已经对齐，这里不会再动）。
-    // 动画也可能被新的拖动打断，那时位置归手指管，不能拉回整数——
-    // 拉了就是一次可见的回弹。
-    .onAnimationEnd((index: number) => {
-      if (!this.dragging) {
-        this.settleSwipe(index);
-      }
-    })
-    .onChange((index: number) => {
-      this.tab = index;
-      AppStorage.setOrCreate('tabIndex', index);
-      // 拖动还没结束时不能硬写位置——那会把跟手值拉回整数，
-      // 手指还按着、指示器却跳一下，就是「回弹一下再跳过去」的来源。
-      // 拖动中交给 onAnimationEnd 落位；点按切页（非拖动）才直接跟随。
-      if (!this.dragging) {
-        this.swipeAt = index;
-        AppStorage.setOrCreate('tabSwipe', index);
-      }
-      // 新页面从完整布局开始：上一个页面滚动收起的标签栏要复位
-      TabBarHider.get().reset();
-    })
+      .width('100%')
+      .height('100%')
   }
 
   @Builder
@@ -746,68 +540,20 @@ struct Index {
       .backgroundColor(this.p().bg)
 
       /*
-       * 全局悬浮层（在 Navigation 之外，所以二级页也看得见）：
-       *   - 迷你播放条：只要队列里有歌就显示，点了播放立刻出现，不再依赖当前在哪个页面
-       *   - 胶囊标签栏：只在一级页显示（navDepth === 0），二级页留出整屏给内容
+       * 全局悬浮底栏（在 Navigation 之外，所以二级页也看得见）：
+       *   页签胶囊：只在一级页显示（BottomDock 内部按 navDepth 判断）
+       *   迷你播放条：只要队列里有歌就显示，进歌单/榜单也还在
+       * 两者左右并排、一方展开另一方收起，宽度由 BottomDock 自己算，不会挤出屏幕。
        * 启动那一下不画，避免盖在「音栈」加载页上。
        */
       if (this.ready) {
-        Column() {
-          // ── 一镜到底「小形态」：只在播放页未展开时留在树上 ──
-          // geometryTransition 要求绑定同一 id 的两个组件一消失、一创建；
-          // 让迷你条常驻、只在上面盖一层全屏页是无效的（两个节点同时在场）。
-          // 大形态在根 Stack 末尾，二者绑定同一个 PLAYER_SHARED_ID。
-          if (!this.playerShow) {
-            // 收起时这条播放条「沉」进底栏那一行（底栏里的紧凑版接手）。
-            // 淡出到 0.46 就退干净，之后才把高度收掉——
-            // 以前两个窗口几乎同步，收到的过程中它还是半可见的，
-            // 看着就是一条被压扁、内容被裁掉一半的播放条。
-            Column() {
-              MiniPlayer()
-                .opacity(1 - this.barStage(0.06, 0.46))
-                .translate({ y: -10 * this.easeOutStage(this.barStage(0.06, 0.46)) })
-                // 左右各收 4：播放条比标签栏窄一圈，两层一宽一窄才分得出
-                // 「小的浮在上面、大的托在下面」。同宽并排会看成一条被切成两截。
-                .margin({ left: 4, right: 4 })
-            }
-            .width('100%')
-            .height(58 * (1 - this.barStage(0.44, 0.62)))
-            .clip(true)
-            // 高度收到 0 后它还留在树上（为了保住淡出这段过渡），里面仍是一整套
-            // 58 高的可点控件。clip 只裁绘制、不裁命中，所以要在外层整棵子树禁用，
-            // 否则收起之后底栏上方会留一条看不见的「点哪都进播放页」的热区。
-            .enabled(this.barStage(0.44, 0.62) < 0.5)
-            .hitTestBehavior(this.barStage(0.44, 0.62) < 0.5 ? HitTestMode.Default : HitTestMode.None)
-            // 官方共享元素：与全屏播放页绑定同一 id，系统自动把两者的
-            // 宽高、位置插值到相同值并切换透明度，实现一镜到底。
-            // OPACITY 转场保活，避免 if 分支切换时节点被立即销毁导致动画闪断；
-            // clip(true) 让容器形变时走边缘裁剪，内部内容不被拉伸。
-            .geometryTransition(this.playerGeomId)
-            .transition(TransitionEffect.OPACITY.animation({ duration: 180 }))
+        BottomDock({
+          onChangeTab: (index: number): void => {
+            this.switchTab(index);
           }
-          if (this.navDepth === 0) {
-            // 外层固定 62 高、底对齐：标签栏收起时只是自己变矮下沉，
-            // 迷你播放条的位置完全不动。不包这一层的话整列会一起缩，
-            // 播放条跟着上下晃 16vp，看着像整块在抖。
-            Column() {
-              TabBar({
-                current: this.tab,
-                total: 3,
-                onSelect: (index: number): void => {
-                  this.switchTab(index);
-                }
-              })
-            }
-            .width('100%')
-            .height(62)
-            .justifyContent(FlexAlign.End)
-            // 8 → 12：两件玻璃之间留出能被看见的缝。
-            // 缝太小的话投影落不下来，两层会贴成一块厚板，"浮"就没了。
-            .margin({ top: 12 })
-          }
-        }
-        .width('100%')
-        .padding({ left: 14, right: 14, bottom: this.bottomSafe })
+        })
+          .width('100%')
+          .transition(TransitionEffect.OPACITY.animation({ duration: 200 }))
       }
 
       // 队列面板：自绘浮层，不用 bindSheet。
@@ -863,5 +609,57 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor(this.p().bg)
+    // 横滑时把「手指当前的横坐标」广播出去，底栏靠它画跟手流光。
+    // 这里用 onTouch 而不是 PanGesture：Swiper 内部手势优先级更高，
+    // 挂在根节点上的 Pan 一旦被判负就再也收不到回调，流光会一次都不亮。
+    // onTouch 不参与手势竞争，只读坐标、不消费事件，翻页照旧由 Swiper 处理。
+    .onTouch((event: TouchEvent): void => {
+      this.onRootTouch(event);
+    })
+  }
+
+  /** 横滑判定用的按下点与锁定位（只做逻辑，不参与渲染）。 */
+  private touchDownX: number = 0;
+  private touchDownY: number = 0;
+  private touchLocked: boolean = false;
+
+  /**
+   * 旁路监听整屏触摸。
+   * 一旦「横向位移 > 6 且横向大于纵向」就锁定为横滑，此后每一帧把手指 x
+   * 原样写进 AppStorage —— 不做平滑、不做阻尼，底栏拿到什么就画在哪，天然 1:1。
+   * 竖滑（列表滚动）和点击都不会点亮，因为方向判定不通过。
+   */
+  private onRootTouch(event: TouchEvent): void {
+    if (!event || event.touches.length === 0) {
+      this.endSwipe();
+      return;
+    }
+    const x: number = event.touches[0].x;
+    const y: number = event.touches[0].y;
+    if (event.type === TouchType.Down) {
+      this.touchDownX = x;
+      this.touchDownY = y;
+      this.touchLocked = false;
+      return;
+    }
+    if (event.type === TouchType.Move) {
+      if (!this.touchLocked) {
+        const dx: number = Math.abs(x - this.touchDownX);
+        const dy: number = Math.abs(y - this.touchDownY);
+        if (dx <= 6 || dx <= dy) {
+          return;
+        }
+        this.touchLocked = true;
+      }
+      AppStorage.setOrCreate('swipeX', x);
+      AppStorage.setOrCreate('swipeOn', 1);
+      return;
+    }
+    this.endSwipe();
+  }
+
+  private endSwipe(): void {
+    this.touchLocked = false;
+    AppStorage.setOrCreate('swipeOn', 0);
   }
 }

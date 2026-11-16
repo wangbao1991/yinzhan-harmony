@@ -44,14 +44,8 @@ dockH = MINI_H + GAP + TAB_H = 110（原 94）；一级页底部留白 150，未
 - 签名：`sign-app success`；`verify-app` → `Verify success`；profile 绑定 `com.yinzhan.music`。
 - 包身份：`com.yinzhan.music / versionCode 87 / versionName 1.2.0`。
 
-## 与仓库其他版本的关系
+## 与仓库的关系
 
-| 目录 | 版本 | 说明 |
-| --- | --- | --- |
-| 仓库根目录 | `67 / 1.0` | 首次开源提交的干净源码版 |
-| `release/v1.0-source-capability` | `67 / 1.0` | 音源能力分派版本快照 |
-| `release/v1.0-cleanup10` | `67 / 1.0` | 代码审计清理 10 组废弃代码后的快照 |
-| `release/v1.0-batch-download-perf` | `67 / 1.0` | 批量下载性能返工后的快照 |
-| `release/v1.2.0-dock-taller`（本目录） | `87 / 1.2.0` | 底栏重构基线 + 本轮的播放条 / 页签栏加宽 |
+仓库根目录即本版本（`87 / 1.2.0`）的完整源码，本目录只是把「可直接取用的产物」单独放一份，方便不克隆仓库也能下载。
 
-v1.0 → v1.2.0 之间是结构性重构（自绘 `BottomDock`、评论区、音源能力扩展、下载链路性能返工、界面文案清理等），不只是版本号变化，详见包内 `AGENTS.md` 与交付说明。
+源码工程 zip 与根目录源码一致，可直接对照。签名材料不随仓库分发。

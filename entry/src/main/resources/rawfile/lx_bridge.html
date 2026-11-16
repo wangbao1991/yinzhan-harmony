@@ -24,6 +24,12 @@
   var httpSeq = 0;
   var httpPending = {};
   /**
+   * 按音源实例存放的用户变量（cookie / apikey / token / 自建地址 …）。
+   * 独立于 instances，__reset 时一并清空；MusicFree 插件通过 env.getUserVariables()
+   * 读到这里的值。旧运行时写死 {}，声明了 userVariables 的插件全部拿不到配置。
+   */
+  var userVarsByInst = {};
+  /**
    * 全局 lx 的调度状态。
    * 一个 ArkWeb 页面里驻留多个音源，window.lx 只能是单值。脚本顶层解构
    * `const {request} = globalThis.lx` 时拿到的是各自的实例（没问题），但异步
@@ -407,7 +413,9 @@
     try {
       var mf = window.MFRuntime.load(instId, code, {
         lx: lxObj,
-        log: function (text) { log(instId, text); }
+        log: function (text) { log(instId, text); },
+        // getter 而非快照：音源页改完用户变量即时生效，不必重载脚本
+        getUserVariables: function () { return userVarsByInst[instId] || {}; }
       });
       inst.kind = 'musicfree';
       inst.name = mf.name;
@@ -420,7 +428,11 @@
         return mf.request(args.action, args);
       }];
       inst.loaded = true;
-      toNative({ type: 'loaded', inst: instId, kind: 'musicfree', name: mf.name, version: mf.version, updateUrl: mf.srcUrl });
+      // 能力与用户变量声明一并回传：音源页据此展示「这个插件能做什么」并生成配置表单。
+      // 序列化成单个字符串，避免 ArkTS 侧处理异构数组；只回传声明，不回传值。
+      toNative({ type: 'loaded', inst: instId, kind: 'musicfree', name: mf.name,
+        version: mf.version, updateUrl: mf.srcUrl,
+        meta: JSON.stringify({ capabilities: mf.capabilities || [], variableDefs: mf.variableDefs || [] }) });
       // 合成 inited：洛雪协议要求「上报可用平台」才允许取链。
       // sourceId 用 mf:<instId>，保证只有产出这首歌的插件能认领它。
       var src = {};
@@ -527,6 +539,22 @@
 
     __unload: function (instId) {
       delete instances[instId];
+      delete userVarsByInst[instId];
+    },
+
+    /**
+     * 注入 / 更新某个音源的用户变量。宿主在 __load 之前调用一次（装载时插件
+     * 顶层可能就读 env），音源页保存配置后再调用一次即时生效。
+     * 只接受 JSON 对象；解析失败按空对象处理，绝不把脏值塞进插件环境。
+     */
+    __setUserVars: function (instId, varsJson) {
+      var parsed = {};
+      try {
+        var v = JSON.parse(String(varsJson || '{}'));
+        if (v && typeof v === 'object' && !Array.isArray(v)) parsed = v;
+      } catch (e) { parsed = {}; }
+      userVarsByInst[instId] = parsed;
+      return true;
     },
 
     /**
@@ -543,6 +571,7 @@
       }
       httpPending = {};
       instances = {};
+      userVarsByInst = {};
       lxCallCount = 0;
       baseLx = null;
       window.lx = null;

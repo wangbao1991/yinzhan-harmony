@@ -6,6 +6,7 @@ import { Player } from '../core/Player';
 import { ImportIntent } from '../core/ImportIntent';
 import { FavSyncHub } from '../core/FavSyncHub';
 import { Store } from '../core/Store';
+import { Downloader } from '../core/Downloader';
 
 /** 浅色主题下的窗口底色（与页面一致，保证圆角/异形屏不露白） */
 const WINDOW_BG_LIGHT: string = '#FFF1EFEA';
@@ -157,5 +158,8 @@ export default class EntryAbility extends UIAbility {
   /** 退到后台：停掉定时对账，不空耗网络与电量 */
   onBackground(): void {
     FavSyncHub.get().stopForegroundSync();
+    // 下载完成的「广播合并窗口」可能还没到点，切后台前把挂起的状态刷新补发一次，
+    // 保证回到前台时下载列表一定是最新的（落盘本来就是当场做的，不依赖这里）
+    Downloader.get().flushPending();
   }
 }

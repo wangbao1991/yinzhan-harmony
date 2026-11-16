@@ -64,20 +64,47 @@ export class LocalRepo {
     AppStorage.setOrCreate('localVersion', Date.now());
   }
 
+  /**
+   * 摘掉「下载完成自动登记」留下的历史条目（2026-11-16 用户口径）。
+   *
+   * 用户在真机上看到「下载完的歌跑到本地音乐里，太占地方」，要求下载只留在下载管理页。
+   * 用户要求「下载完的歌不要放到本地音乐里，太占地方」，新版本已不再把下载结果写进本库；
+   * 但老版本装过之后 Store 里还留着那批记录，这里启动时清一次：手动导入的歌一定被拷进
+   * files/local_music，路径不在本目录下的就是当年「下载完成自动登记」写进来的，可以安全摘掉。
+   *
+   * 只摘记录、不删文件，并把摘掉的条目**返回给调用方**：
+   * 老版本里有两种历史形态 —— 「完成即出队」那版队列里根本没有 done 记录，
+   * 若这里只摘不放，歌会同时从本地音乐和下载页消失，文件却还占着空间，
+   * 用户连删都删不掉。App.init 会把返回值交给 Downloader.absorbLegacy()
+   * 补成 done 记录，保证「文件在 → 列表里在 → 能播能删」。
+   *
+   * 条目为 0 时不落盘、不广播，正常启动零副作用。
+   */
+  detachExternal(): LocalSong[] {
+    const keep: LocalSong[] = [];
+    const removed: LocalSong[] = [];
+    for (const song of this.songs) {
+      if (song.filePath.length > 0 && song.filePath.indexOf(this.dir + '/') !== 0) {
+        removed.push(song);
+        continue;
+      }
+      keep.push(song);
+    }
+    if (removed.length === 0) {
+      return removed;
+    }
+    this.songs = keep;
+    this.persist();
+    this.notify();
+    return removed;
+  }
+
   list(): LocalSong[] {
     return this.songs;
   }
 
   count(): number {
     return this.songs.length;
-  }
-
-  usedBytes(): number {
-    let total = 0;
-    for (const song of this.songs) {
-      total += song.size;
-    }
-    return total;
   }
 
   pathOf(songId: string): string {

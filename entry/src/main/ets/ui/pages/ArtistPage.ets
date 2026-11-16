@@ -370,8 +370,7 @@ export struct ArtistPage {
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text((this.artist.platform.length > 0 ? platformName(this.artist.platform) + ' · ' : '') +
             (this.total > 0 ? this.total.toString() : this.songs.length.toString()) + ' 首作品 · ' +
-            this.albums.length.toString() + ' 部专辑' +
-            (this.hasMore ? ' · 上滑加载更多' : ''))
+            this.albums.length.toString() + ' 部已加载专辑')
             .fontSize(FONT.caption)
             .fontColor(this.p().text3)
         }
@@ -400,10 +399,6 @@ export struct ArtistPage {
           })
         }
         .width('100%')
-        Text('专辑按已加载作品去重统计，上滑加载更多后会增加；不是歌手全部专辑总数')
-          .fontSize(FONT.micro)
-          .fontColor(this.p().text3)
-          .width('100%')
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)

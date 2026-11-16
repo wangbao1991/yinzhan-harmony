@@ -241,12 +241,6 @@ export interface SearchPage {
   hasMore: boolean;
 }
 
-/** 搜索类型 */
-export enum SearchType {
-  SONG = 0,
-  SHEET = 1,
-  ARTIST = 2
-}
 
 /** 播放模式 */
 export enum PlayMode {
@@ -271,23 +265,7 @@ export interface ResolveResult {
   altSong?: SongInfo;
 }
 
-/** 音源自检结果 */
-export interface SourceHealth {
-  sourceId: string;
-  sourceName: string;
-  ok: boolean;
-  latency: number;
-  message: string;
-  platforms: string[];
-  checkedAt: number;
-}
 
-/** 音源脚本 inited 上报的平台详情 */
-export interface LxSourceDetail {
-  id: string;
-  name: string;
-  qualitys: string[];
-}
 
 /** 洛雪脚本原始歌曲字段（宽容解析） */
 export interface LxRawSong {
@@ -315,24 +293,8 @@ export interface LxRawSong {
   copyrightId?: string;
 }
 
-export interface LxListResult {
-  list?: LxRawSong[];
-  total?: number;
-  limit?: number;
-  page?: number;
-}
 
-export interface LxUrlResult {
-  url?: string;
-  type?: string;
-  quality?: string;
-}
 
-export interface LxLyricResult {
-  lyric?: string;
-  tlyric?: string;
-  lxlyric?: string;
-}
 
 /** 调用音源脚本的参数 */
 export interface LxInvokeInfo {
@@ -347,6 +309,32 @@ export interface LxInvokeInfo {
   tag?: SheetTag;
   /** v2.44：详情页回传插件自己的 sheetItem / artistItem 原文 */
   mfRaw?: string;
+}
+
+/**
+ * MusicFree 插件声明的一个用户变量（来自插件的 userVariables 字段）。
+ * 只描述「要填什么」，值由宿主按音源隔离存本机，不随脚本或能力清单一走。
+ */
+export interface MfVarDef {
+  key: string;
+  name: string;
+  hint: string;
+  /** 插件标了 type: 'password'，UI 用密码输入 */
+  secret: boolean;
+}
+
+/** 插件装载后回传的「实际导出的能力 + 变量声明」 */
+export interface MfMeta {
+  capabilities: string[];
+  variableDefs: MfVarDef[];
+}
+
+/** 扩展能力试跑结果：一次调用可能返回歌曲 / 歌单榜单 / 标签中的一类 */
+export interface MfProbeResult {
+  songs: SongInfo[];
+  sheets: SheetInfo[];
+  tags: SheetTag[];
+  error: string;
 }
 
 /** 页面导航参数 */
@@ -503,30 +491,6 @@ export function secondsToInterval(seconds: number): string {
   return mm + ':' + ss;
 }
 
-/** 把洛雪脚本返回的原始对象补成 SongInfo（缺字段不报错） */
-export function normalizeSong(raw: LxRawSong, defaultSource: string): SongInfo {
-  const song = newSong(raw.source ?? defaultSource);
-  const name = raw.name ?? raw.title ?? '';
-  const singer = raw.singer ?? raw.artist ?? '';
-  const id = raw.id ?? raw.songmid ?? raw.hash ?? '';
-  song.id = id;
-  song.songmid = raw.songmid ?? id;
-  song.hash = raw.hash ?? '';
-  song.musicrid = raw.musicrid ?? '';
-  song.name = name;
-  song.singer = singer;
-  song.album = raw.album ?? raw.albumName ?? '';
-  song.albumName = song.album;
-  song.albumId = raw.albumId ?? raw.albumMid ?? '';
-  song.copyrightId = raw.copyrightId ?? '';
-  song.interval = raw.interval ?? '';
-  song.duration = raw.duration !== undefined ? raw.duration : intervalToSeconds(song.interval);
-  song.cover = raw.cover ?? raw.pic ?? raw.img ?? '';
-  song.lyric = raw.lyric ?? '';
-  song.url = raw.url ?? '';
-  song.quality = raw.quality ?? '';
-  return song;
-}
 
 /** 去重键：歌名 + 首位歌手，忽略大小写、空格和标点 */
 export function songKey(song: SongInfo): string {

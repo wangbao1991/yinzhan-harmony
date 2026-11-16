@@ -88,7 +88,18 @@ export class Store {
     if (this.pref === null) {
       return;
     }
-    this.pref.putSync(key, value);
+    /**
+     * putSync 会抛异常（值超过系统单值长度上限、Preferences 被系统回收等）。
+     * 以前没有 try/catch，下载队列变大或音源脚本超长时会直接把应用打崩。
+     * 写失败只记日志：调用方拿到的是「这次没写进去」，内存态仍然有效，
+     * 下一次改动会再写，不至于因为一次落盘失败就中断用户操作。
+     */
+    try {
+      this.pref.putSync(key, value);
+    } catch (e) {
+      console.error('[Store] 写入失败 ' + key + '：' + String(e));
+      return;
+    }
     this.persist();
   }
 
@@ -96,7 +107,11 @@ export class Store {
     if (this.pref === null) {
       return;
     }
-    this.pref.putSync(key, value);
+    try {
+      this.pref.putSync(key, value);
+    } catch (e) {
+      console.error('[Store] 写入失败（延迟刷盘）' + key + '：' + String(e));
+    }
   }
 
   flush(): void {

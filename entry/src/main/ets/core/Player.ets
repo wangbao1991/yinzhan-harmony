@@ -9,7 +9,6 @@ import { Resolver, FailDetail } from './Resolver';
 import { LyricRepo } from './LyricRepo';
 import { CoverRepo } from './CoverRepo';
 import { Library } from './Library';
-import { PlayStats } from './PlayStats';
 import { Settings } from './Settings';
 import { Store } from './Store';
 import { MediaSessionService, PlaybackCommandHandler } from '../service/MediaSessionService';
@@ -23,6 +22,11 @@ const PREPARE_TIMEOUT: number = 30000;
  * 又比 15 分钟缓存 TTL 短得多，链接不会放到过期。
  */
 const PRELOAD_LEAD_MS: number = 60000;
+/**
+ * 听够整首的比例阈值：超过 2/3 认为「这首你确实在听」，才自动加入下载队列。
+ * 取播放进度（timeUpdate）而不是定时轮询，切歌 / seek / 后台续播都不会误触。
+ */
+const AUTO_DOWNLOAD_RATIO: number = 2 / 3;
 /** 播放器准备失败时，最多再换几条其它音源给的链接 */
 const MAX_SOURCE_SWITCH: number = 3;
 
@@ -78,7 +82,15 @@ export class Player {
   private prepareTimer: number = -1;
   /** 本首是否已触发过预加载，避免 timeUpdate 每帧重复发起 */
   private preloadDone: boolean = false;
+  /** 本首是否已触发过「听够 2/3 自动下载」，每首只触发一次 */
+  private autoDownloadDone: boolean = false;
+  /** App 侧注入：由它判断开关、去重并入队，Player 不直接依赖 App（避免循环引用） */
+  private autoDownloadHandler: ((song: SongInfo) => void) | null = null;
   private resumeAfterInterrupt: boolean = false;
+  /** 忽略音频打断：AudioSession 混音会话句柄（API 12+），跨应用共存只能靠它 */
+  private audioSession: audio.AudioSessionManager | null = null;
+  /** 系统强制打断后「抢回播放」的节流时间戳，避免与系统反复拉扯 */
+  private interruptResumeAt: number = 0;
   private localPathProvider: ((song: SongInfo) => string) | null = null;
   private errorReporter: ((message: string) => void) | null = null;
   private initialized: boolean = false;
@@ -124,10 +136,32 @@ export class Player {
     this.session.init(context, handler).catch(() => {
       console.error('[Player] 播控中心初始化失败');
     });
+
+    // 「忽略音频打断」的正解是 AudioSession 的混音策略，不是 AVPlayer.audioInterruptMode
+    // （后者只管同一应用内多条音频流，管不了别的 App）。PAUSE/STOP 属于 INTERRUPT_FORCE，
+    // 由系统强制执行，应用在 audioInterrupt 回调里 return 也挡不住，只能靠 MIX_WITH_OTHERS
+    // 让本应用的流不参与焦点抢占。会话可能被系统超时/抢占释放，故监听后重新激活。
+    try {
+      this.audioSession = audio.getAudioManager().getSessionManager();
+      this.audioSession.on('audioSessionDeactivated',
+        (_event: audio.AudioSessionDeactivatedEvent): void => {
+          if (Settings.get().ignoreInterrupt()) {
+            this.syncAudioSession();
+          }
+        });
+      this.syncAudioSession();
+    } catch (e) {
+      console.warn('[Player] 音频会话管理器初始化失败 ' + String(e));
+    }
   }
 
   setLocalPathProvider(provider: (song: SongInfo) => string): void {
     this.localPathProvider = provider;
+  }
+
+  /** 注入「听够 2/3 自动下载」执行器；开关 / 去重 / 入队都在 App 侧完成 */
+  setAutoDownloadHandler(handler: (song: SongInfo) => void): void {
+    this.autoDownloadHandler = handler;
   }
 
   onChange(listener: () => void): void {
@@ -325,7 +359,6 @@ export class Player {
     }
     const token = ++this.token;
     this.current = song;
-    PlayStats.get().onSongStart(song);
     // 冷启动恢复播放、或直接从播放页切歌时，也要确保缺封面的歌开始后台补全
     CoverRepo.get().ensure(song);
     this.playing = false;
@@ -348,6 +381,7 @@ export class Player {
     this.resumeSeek = 0;
     this.duration = song.duration * 1000;
     this.preloadDone = false;
+    this.autoDownloadDone = false;
     this.lyric = emptyLyric();
     this.lyricLoading = true;
     this.notify();
@@ -682,6 +716,12 @@ export class Player {
 
   /* ---------------- AVPlayer ---------------- */
   private async prepare(url: string, localPath: string, token: number): Promise<void> {
+    /**
+     * 把「当前正在播的本地文件」写进 AppStorage：下载队列超限自动裁剪时要靠它避让，
+     * 否则用户正在听的歌可能被当成最旧的记录连文件一起删掉（播放中断且不可恢复）。
+     * 在线播放时写空串，表示没有本地文件处于占用状态。只在切歌时写一次，无逐帧开销。
+     */
+    AppStorage.setOrCreate('playingLocalPath', localPath);
     // 旧播放器已在 playCurrent 取链前释放，这里直接创建新实例
     let player: media.AVPlayer;
     try {
@@ -695,21 +735,24 @@ export class Player {
       return;
     }
     this.player = player;
-    try {
-      player.audioRendererInfo = {
-        usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
-        rendererFlags: 0
-      };
-      player.audioInterruptMode = Settings.get().ignoreInterrupt() ?
-        audio.InterruptMode.INDEPENDENT_MODE : audio.InterruptMode.SHARE_MODE;
-    } catch (e) {
-      console.warn('[Player] 音频流设置失败 ' + String(e));
-    }
+    // 这两个属性不能在 idle 状态设置：官方要求 audioRendererInfo 在 initialized、
+    // audioInterruptMode 在 prepared（且必须在首次 prepare() / play() 之前）。
+    // 旧版放在 createAVPlayer() 之后，被系统忽略，等于开关从来没生效过。
     player.on('stateChange', (state: media.AVPlayerState, reason: media.StateChangeReason) => {
       if (token !== this.token) {
         return;
       }
       if (state === 'initialized') {
+        // 官方约束：audioRendererInfo 只允许在 initialized 状态设置，
+        // 且必须在第一次 prepare() 之前，音频渲染器的 usage 才生效。
+        try {
+          player.audioRendererInfo = {
+            usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
+            rendererFlags: 0
+          };
+        } catch (e) {
+          console.warn('[Player] 音频流信息设置失败 ' + String(e));
+        }
         player.prepare().catch(() => {
           this.handleFail('音频准备失败');
         });
@@ -718,8 +761,19 @@ export class Player {
         if (player.duration > 0) {
           this.duration = player.duration;
         }
+        // 官方约束：audioInterruptMode 只允许在 prepared/playing/paused/completed
+        // 状态设置，且必须在第一次 play() 之前；idle 状态设置无效（旧版的坑）。
+        // 它只决定「同一应用内多条音频流」的焦点归属，跨应用共存靠 AudioSession。
+        try {
+          player.audioInterruptMode = Settings.get().ignoreInterrupt() ?
+            audio.InterruptMode.INDEPENDENT_MODE : audio.InterruptMode.SHARE_MODE;
+        } catch (e) {
+          console.warn('[Player] 音频焦点模式设置失败 ' + String(e));
+        }
         const resumeAt = this.pendingSeek;
         this.pendingSeek = 0;
+        // 播放前确认混音会话仍激活（会话可能被系统超时释放）；幂等，不阻塞起播。
+        this.syncAudioSession();
         player.play().catch(() => {
           this.handleFail('播放失败');
         });
@@ -747,13 +801,9 @@ export class Player {
         // 不能等下一次 5 秒窗口（那之间被系统回收就白停了）
         this.persistPosition();
         this.persistQueue(false);
-        PlayStats.get().flush();
         this.scheduleBackgroundStop();
       } else if (state === 'completed') {
         this.playing = false;
-        // 一首歌自然播到结尾：记一次完播。必须在 nextAuto() 切歌之前取 this.current，
-        // 否则统计到的是下一首。单曲循环走 seek(0) 不切歌，也算一次完整听完。
-        PlayStats.get().onCompleted(this.current);
         this.notify();
         this.persistQueue(false);
         if (this.mode === PlayMode.LOOP_ONE) {
@@ -772,7 +822,6 @@ export class Player {
         return;
       }
       this.position = time;
-      PlayStats.get().onProgress(time, this.playing, this.current);
       if (this.duration === 0) {
         this.duration = player.duration;
       }
@@ -781,6 +830,18 @@ export class Player {
       if (!this.preloadDone && this.duration > 0 && this.duration - time <= PRELOAD_LEAD_MS) {
         this.preloadDone = true;
         this.prefetchNext();
+      }
+      // 听够 2/3 自动下载：只认播放进度自然推进，每首一次；开关 / 去重交给 App 侧执行器。
+      // 执行器抛错也只记日志，绝不影响正在播的这一首。
+      if (!this.autoDownloadDone && this.duration > 0 && time >= this.duration * AUTO_DOWNLOAD_RATIO) {
+        this.autoDownloadDone = true;
+        if (this.autoDownloadHandler !== null) {
+          try {
+            this.autoDownloadHandler(this.current);
+          } catch (e) {
+            console.warn('[Player] 自动下载入队失败 ' + String(e));
+          }
+        }
       }
       this.notify();
       const now = Date.now();
@@ -797,7 +858,17 @@ export class Player {
       console.error('[Player] error ' + (err.message ?? ''));
     });
     player.on('audioInterrupt', (event: audio.InterruptEvent) => {
-      if (token !== this.token || Settings.get().ignoreInterrupt()) {
+      if (token !== this.token) {
+        return;
+      }
+      if (Settings.get().ignoreInterrupt()) {
+        // 开关打开：PAUSE / STOP 属于 INTERRUPT_FORCE，是系统强制把音频流置为暂停，
+        // 应用没法「忽略事件」本身（旧版在这里直接 return，正是功能失效的原因）。
+        // 混音会话被超时/抢占释放后仍会收到打断，这里补一次节流续播抢回播放。
+        if (event.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE ||
+          event.hintType === audio.InterruptHint.INTERRUPT_HINT_STOP) {
+          this.resumeFromForcedInterrupt(player, token);
+        }
         return;
       }
       if (event.hintType === audio.InterruptHint.INTERRUPT_HINT_PAUSE ||
@@ -1141,18 +1212,84 @@ export class Player {
       await this.bgTask.stop(context);
     }
     await this.session.destroy();
+    // 退出时释放混音会话，把焦点策略交还系统（失败不影响关闭流程）
+    try {
+      if (this.audioSession !== null && this.audioSession.isAudioSessionActivated()) {
+        await this.audioSession.deactivateAudioSession();
+      }
+    } catch (e) {
+      // 静默忽略
+    }
+  }
+
+  /**
+   * 按「忽略音频打断」开关同步 AudioSession 策略。
+   * 打开 → CONCURRENCY_MIX_WITH_OTHERS：本应用音频流与其它应用混音共存，系统不再
+   * 按默认焦点策略强制暂停本应用；关闭 → 释放会话，回到系统默认（该暂停就暂停）。
+   * 幂等：先 isAudioSessionActivated()，切歌 / 重复调用不会反复 activate。
+   */
+  private async syncAudioSession(): Promise<void> {
+    const mgr = this.audioSession;
+    if (mgr === null) {
+      return;
+    }
+    const want: boolean = Settings.get().ignoreInterrupt();
+    try {
+      if (want && !mgr.isAudioSessionActivated()) {
+        try {
+          mgr.setAudioSessionScene(audio.AudioSessionScene.AUDIO_SESSION_SCENE_MEDIA);
+        } catch (e) {
+          // scene 是 API 20+ 的可选优化，设置失败不影响主策略
+        }
+        await mgr.activateAudioSession({
+          concurrencyMode: audio.AudioConcurrencyMode.CONCURRENCY_MIX_WITH_OTHERS
+        });
+      } else if (!want && mgr.isAudioSessionActivated()) {
+        await mgr.deactivateAudioSession();
+      }
+    } catch (e) {
+      console.warn('[Player] 音频会话策略切换失败 ' + String(e));
+    }
+  }
+
+  /**
+   * 系统强制打断的兜底：个别机型 / 场景下混音会话没覆盖住，系统仍会把音频流
+   * 置为 paused。这里不主动 pause，延迟 250ms 补一次 play() 抢回播放，并重新
+   * 激活混音会话。1.5s 节流，避免与系统反复拉扯造成播放抖动。
+   */
+  private resumeFromForcedInterrupt(player: media.AVPlayer, token: number): void {
+    const now = Date.now();
+    if (now - this.interruptResumeAt < 1500) {
+      return;
+    }
+    this.interruptResumeAt = now;
+    this.syncAudioSession();
+    setTimeout(() => {
+      if (token !== this.token) {
+        return;
+      }
+      try {
+        if (player.state === 'paused' || player.state === 'prepared') {
+          player.play().catch(() => {
+          });
+        }
+      } catch (e) {
+        // 播放器已释放，忽略
+      }
+    }, 250);
   }
 
   applyInterruptMode(): void {
     const player = this.player;
-    if (player === null) {
-      return;
+    if (player !== null) {
+      try {
+        player.audioInterruptMode = Settings.get().ignoreInterrupt() ?
+          audio.InterruptMode.INDEPENDENT_MODE : audio.InterruptMode.SHARE_MODE;
+      } catch (e) {
+        console.warn('[Player] 切换打断模式失败');
+      }
     }
-    try {
-      player.audioInterruptMode = Settings.get().ignoreInterrupt() ?
-        audio.InterruptMode.INDEPENDENT_MODE : audio.InterruptMode.SHARE_MODE;
-    } catch (e) {
-      console.warn('[Player] 切换打断模式失败');
-    }
+    // 跨应用共存真正靠 AudioSession 策略，开关一变立即同步（开→激活混音，关→释放）
+    this.syncAudioSession();
   }
 }

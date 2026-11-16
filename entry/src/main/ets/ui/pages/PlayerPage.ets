@@ -18,6 +18,8 @@ import { CoverRepo } from '../../core/CoverRepo';
 import { Backdrop } from '../../core/Backdrop';
 import { Cover, IconTap } from '../Common';
 import { QueueOverlay } from '../QueueOverlay';
+import { CommentPanel } from './CommentPanel';
+import { commentSupported } from '../../core/CommentApi';
 
 
 /**
@@ -101,6 +103,8 @@ export struct PlayerPage {
   @State sourceKind: string = 'normal';
   @State errorText: string = '';
   @State panel: number = 0;
+  /** v1.0 评论：每次打开面板 +1，作为 CommentPanel 的 songKey 一部分，切歌/重开必定重新拉 */
+  @State commentSession: number = 0;
   /** 失败面板（panel === 7）：逐条列出这次问了谁、为什么没成 */
   @State failDetails: FailDetail[] = [];
   @State failCount: number = 0;
@@ -462,7 +466,7 @@ export struct PlayerPage {
       this.lyricSearching = false;
       this.lyricCandidates = list;
       if (list.length === 0) {
-        this.lyricSearchHint = '没搜到可用歌词，换个歌名或去掉歌手再试';
+        this.lyricSearchHint = '没搜到可用歌词';
       }
     }).catch((): void => {
       this.lyricSearching = false;
@@ -565,12 +569,6 @@ export struct PlayerPage {
     return '列表循环';
   }
 
-  private ratio(): number {
-    const total = this.duration > 0 ? this.duration : 1;
-    const value = this.dragging >= 0 ? this.dragging * 1000 : this.progressMs;
-    return Math.max(0, Math.min(1, value / total));
-  }
-
   private seekTo(seconds: number): void {
     const ms = Math.max(0, Math.min(seconds * 1000, this.duration));
     this.player.seek(ms);
@@ -664,7 +662,7 @@ export struct PlayerPage {
       paddingSize: 8,
       onTap: () => {
         this.player.reload();
-        App.get().toast('正在重新取链，会按顺序试所有音源');
+        App.get().toast('正在重新取链');
       }
     })
   }
@@ -1009,11 +1007,6 @@ export struct PlayerPage {
         SymbolGlyph($r('sys.symbol.text_alignleft')).fontSize(28).fontColor([this.onBgSmall()])
         Text('这首歌没找到歌词').fontSize(FONT.callout).fontColor(this.onBgSmall())
           .textShadow({ radius: 8, color: '#B3000000', offsetX: 0, offsetY: 1 })
-        Text('可以试着重新拉一次，会挨个问音源和平台')
-          .fontSize(FONT.caption)
-          .fontColor(this.onBgSmall())
-          .textShadow({ radius: 8, color: '#B3000000', offsetX: 0, offsetY: 1 })
-          .textAlign(TextAlign.Center)
         Text('重新找歌词')
           .fontSize(FONT.caption)
           .fontColor(this.p().primary)
@@ -1260,9 +1253,34 @@ export struct PlayerPage {
       this.qualityButton()
       this.downloadButton()
       this.artistSearchButton()
+      // v1.0 评论：咪咕评论接口已下线且需登录，这类歌直接不出现入口，
+      // 不做「点了没内容」的假按钮。其余四个平台（wy/tx/kw/kg）实测可直连。
+      if (commentSupported(this.song)) {
+        this.commentButton()
+      }
     }
     .width('100%')
     .padding({ left: 10, right: 10, bottom: 4 })
+  }
+
+  /** 评论：底排第 5 个动作，走现成 bindSheet 面板（panel = 8），不新增路由 */
+  @Builder
+  commentButton() {
+    Column({ space: 5 }) {
+      SymbolGlyph($r('sys.symbol.text_alignleft'))
+        .fontSize(19)
+        .fontColor([this.onBgSmall()])
+      Text('评论')
+        .fontSize(9.5)
+        .fontColor(this.onBgSmall())
+        .maxLines(1)
+        .textShadow({ radius: 8, color: '#B3000000', offsetX: 0, offsetY: 1 })
+    }
+    .layoutWeight(1)
+    .onClick(() => {
+      this.commentSession += 1;
+      this.panel = 8;
+    })
   }
 
   /** 收藏：状态判断写在 Builder 内部，才能跟着 this.favorite 实时变红 */
@@ -1365,10 +1383,6 @@ export struct PlayerPage {
         .fontSize(FONT.headline)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.p().text)
-        .width('100%')
-      Text('自动找不到时，可以按歌名从各平台与歌词库重新找一份')
-        .fontSize(FONT.caption)
-        .fontColor(this.p().text3)
         .width('100%')
       TextInput({ text: this.lyricKeyword, placeholder: '歌名，可加歌手' })
         .fontSize(FONT.body)
@@ -1512,7 +1526,7 @@ export struct PlayerPage {
       .alignItems(HorizontalAlign.Start)
 
       if (this.failDetails.length === 0) {
-        Text('没有留下取链失败记录：说明链接取到了，是播放器在准备阶段失败的（链接过期或防盗链校验）。换一条链接通常能恢复。')
+        Text('没有留下取链失败记录：说明链接取到了，是播放器在准备阶段失败的（链接过期或防盗链校验）')
           .fontSize(FONT.caption)
           .fontColor(this.p().text3)
           .lineHeight(19)
@@ -1522,19 +1536,23 @@ export struct PlayerPage {
           Column({ space: 8 }) {
             ForEach(this.failDetails, (item: FailDetail, index: number) => {
               Column({ space: 3 }) {
+                // 卡片底色走 glassCardBase(this.isDark)：浅色主题下是白卡，
+                // 而 p() 恒返回深色主题，音源名再用 p().text（近白）就是白底白字看不见。
+                // 卡片内文字统一跟卡片主题取色；音源名加字号 / 字重，压过下面的错误原因。
                 Row({ space: 6 }) {
                   Text(item.name)
-                    .fontSize(FONT.caption)
-                    .fontColor(this.p().text)
+                    .fontSize(FONT.callout)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(palette(this.isDark).text)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .layoutWeight(1)
                   if (item.preferred) {
                     Text('首选')
                       .fontSize(FONT.micro)
-                      .fontColor(this.p().primary)
+                      .fontColor(palette(this.isDark).primary)
                       .padding({ left: 6, right: 6, top: 1, bottom: 1 })
-                      .backgroundColor(this.p().primarySoft)
+                      .backgroundColor(palette(this.isDark).primarySoft)
                       .borderRadius(RADIUS.pill)
                   }
                 }
@@ -1542,7 +1560,7 @@ export struct PlayerPage {
 
                 Text(item.text)
                   .fontSize(FONT.caption)
-                  .fontColor(this.p().text3)
+                  .fontColor(palette(this.isDark).text2)
                   .lineHeight(18)
                   .width('100%')
               }
@@ -1635,6 +1653,17 @@ export struct PlayerPage {
       this.lyricSearchPanel()
     } else if (this.panel === 7) {
       this.failPanel()
+    } else if (this.panel === 8) {
+      // 评论是组件不是路由：只把当前歌的基本信息按值传进去，
+      // songKey 变化时组件内部 @Watch 重新拉取，不会残留上一首歌的评论。
+      CommentPanel({
+        source: this.song.source,
+        songId: this.song.id,
+        songHash: this.song.hash,
+        songName: this.song.name,
+        songSinger: this.song.singer,
+        songKey: this.song.id + '_' + this.commentSession.toString()
+      })
     }
   }
 
@@ -1697,7 +1726,8 @@ export struct PlayerPage {
     .backgroundImageSize(ImageSize.Cover)
     // 队列（panel 4）走页面内自绘浮层，不参与 bindSheet
     .bindSheet(this.panel > 0 && this.panel !== 4, this.panelContent(), {
-      height: this.panel === 4 || this.panel === 6 ? SheetSize.LARGE : SheetSize.FIT_CONTENT,
+      height: this.panel === 4 || this.panel === 6 || this.panel === 8
+        ? SheetSize.LARGE : SheetSize.FIT_CONTENT,
       dragBar: false,
       backgroundColor: this.p().bg,
       onDisappear: () => {
