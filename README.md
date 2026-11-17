@@ -50,7 +50,8 @@ hvigor/                    构建配置
 
 | 目录 | 版本 | 内容 |
 | --- | --- | --- |
-| [`release/v1.2.0-dock-glass`](release/v1.2.0-dock-glass) | `87 / 1.2.0` | **最新**：底栏液态磨砂（通透版）+ 源码工程 zip + 已签名 HAP + unsigned HAP + 校验值 |
+| [`release/v1.2.0-dock-nowhite`](release/v1.2.0-dock-nowhite) | `87 / 1.2.0` | **最新**：浅色液态磨砂「去白」+ 源码工程 zip + 已签名 HAP + unsigned HAP + 校验值 |
+| [`release/v1.2.0-dock-glass`](release/v1.2.0-dock-glass) | `87 / 1.2.0` | 前序快照：液态磨砂通透版（浅色仍偏白） |
 | [`release/v1.2.0-dock-taller`](release/v1.2.0-dock-taller) | `87 / 1.2.0` | 前序快照：底栏加宽到 52vp（材质仍为不透明底） |
 
 也可以在 [Releases](https://github.com/wangbao1991/yinzhan-harmony/releases) 直接下载 `YinZhan-v1.2.0-signed.hap`。签名材料不随仓库分发，正式分发请用自有 AGC 证书对 unsigned 包重签。

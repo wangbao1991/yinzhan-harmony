@@ -333,18 +333,21 @@ export struct BottomDock {
         .width('100%')
         .height('100%')
         .borderRadius(radius)
-        // 20% / 30%：再透一档。60% → 30% → 现在，底色只负责「压一点点黑」，
+        // 20% / 24%：再透一档。60% → 30% → 现在，底色只负责「压一点点黑」，
         // 明暗几乎全交给背后内容和模糊，这才是玻璃；再高就又回到半透明塑料。
-        .backgroundColor(this.isDark ? '#331A1D24' : '#4DFBFBFB')
+        // 浅色不再用纯白：纸面上压纯白 + 提亮 = 一条 253 的白板（截图实测），
+        // 和米色页面一对比就是「一大块背景」；改成微暖近白并停止提亮，条子才会化进纸里。
+        .backgroundColor(this.isDark ? '#331A1D24' : '#3DFAF9F5')
         // 兜底材质必须同步降档：ULTRA_THICK/THICK 自带一层不透明底色，
         // 和上面的 backgroundEffect 一叠就会「实」，这是之前发闷的主因之一。
         .backgroundBlurStyle(this.isDark ? BlurStyle.COMPONENT_REGULAR : BlurStyle.COMPONENT_THIN)
         // 液态磨砂核心：大半径模糊 + 饱和度提升 + 微提亮 + 取背后平均色
         .backgroundEffect({
           radius: 30,
-          saturation: this.isDark ? 1.9 : 1.6,
-          // 透上去之后整体会略微发灰，提亮补回来一点，避免「脏」而不是「清」
-          brightness: this.isDark ? 1.10 : 1.07,
+          saturation: this.isDark ? 1.9 : 1.25,
+          // 深色透上去会发灰，提亮补回来；浅色本身就在纸上，再提就把条子推成纯白，
+          // 所以只给 1.01 —— 保一点体积感，不抢页面。
+          brightness: this.isDark ? 1.10 : 1.01,
           color: this.isDark ? '#0AFFFFFF' : '#00FFFFFF',
           adaptiveColor: AdaptiveColor.AVERAGE
         })
