@@ -100,7 +100,7 @@ export struct AppearanceSettingsPage {
               SettingSwitchRow({
                 icon: $r('sys.symbol.bolt'),
                 title: '流畅优先',
-                hint: '关闭底栏实时毛玻璃，低端机滚动更顺滑',
+                hint: '默认开启：关掉底栏毛玻璃与流光，滚动最顺',
                 value: this.perfMode,
                 onChange: (on: boolean) => {
                   this.perfMode = on;

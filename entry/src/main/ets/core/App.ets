@@ -76,6 +76,8 @@ export class App {
     FavSyncHub.get().init();
     // 外观：先落到 AppStorage，页面首帧就能用上
     AppStorage.setOrCreate('lightSense', this.settings.lightSense());
+    // 流畅优先默认开：底栏首帧就按「无模糊」渲染，避免启动瞬间先糊一下再变实
+    AppStorage.setOrCreate('perfMode', this.settings.perfMode());
     // 音质偏好是全局值：播放取链、下载、设置页与播放页显示共用它
     AppStorage.setOrCreate('qualityPref', this.settings.quality());
     // 后台补到封面后 CoverRepo 递增它，封面组件订阅刷新

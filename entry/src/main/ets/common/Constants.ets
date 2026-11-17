@@ -312,7 +312,7 @@ export class PrefKeys {
   static readonly SEARCH_SOURCE: string = 'v4_search_source';
   /** 玻璃质感强度：0 关 / 1 柔和 / 2 标准 / 3 强 */
   static readonly LIGHT_SENSE: string = 'v4_light_sense';
-  /** 流畅优先：关闭底栏实时背景模糊（backgroundEffect），只留半透明底色（默认关，保留玻璃观感） */
+  /** 流畅优先：关闭底栏实时模糊 / 流光 / 按压动画，只留实底色（v1.2.0 起默认开，以流畅为先） */
   static readonly PERF_MODE: string = 'v4_perf_mode';
   static readonly DISCOVER_PLATFORM: string = 'v4_discover_platform';
   /** 音源拿不到目标音质时，是否允许自动降级下载 */

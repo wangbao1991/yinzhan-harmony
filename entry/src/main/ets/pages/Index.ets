@@ -651,6 +651,11 @@ struct Index {
         }
         this.touchLocked = true;
       }
+      // 流畅优先（默认）：底栏不做跟手流光，逐帧广播 swipeX 只会白白触发一次
+      // 常驻底栏重渲染。这里直接短路，横滑翻页仍由 Swiper 自己处理。
+      if (AppStorage.get<boolean>('perfMode') === true) {
+        return;
+      }
       AppStorage.setOrCreate('swipeX', x);
       AppStorage.setOrCreate('swipeOn', 1);
       return;

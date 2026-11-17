@@ -55,11 +55,11 @@ export class Settings {
   }
 
   /**
-   * 流畅优先：关掉底栏实时背景模糊（backgroundEffect），只留半透明底色。
-   * 默认关（保留玻璃观感）；低端机 / 掉帧场景打开后，滚动时不再每帧重算模糊。
+   * 流畅优先：关掉底栏实时背景模糊（backgroundEffect）、跟手流光与按压动画。
+   * v1.2.0 起**默认开启**（以流畅为先）；关掉则回到完整玻璃观感。
    */
   perfMode(): boolean {
-    return Store.get().getBool(PrefKeys.PERF_MODE, false);
+    return Store.get().getBool(PrefKeys.PERF_MODE, true);
   }
 
   setPerfMode(value: boolean): void {

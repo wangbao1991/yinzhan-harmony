@@ -90,8 +90,8 @@ export struct BottomDock {
   /** 二级页栈深，>0 时只留播放条。 */
   @StorageProp('navDepth') navDepth: number = 0;
   @StorageProp('bottomSafe') bottomSafe: number = 16;
-  /** 流畅优先：true 时 dockGlass 跳过实时模糊，只留半透明底色（外观设置页开关广播）。 */
-  @StorageProp('perfMode') perfMode: boolean = false;
+  /** 流畅优先（v1.2.0 起默认开）：跳过实时模糊、流光、按压动画，只有实底色。 */
+  @StorageProp('perfMode') perfMode: boolean = true;
   /** 一镜到底共享元素 id（Index 只在转场瞬间写入，平时是空串）。 */
   @StorageProp('playerGeomId') geomId: string = '';
 
@@ -190,6 +190,10 @@ export struct BottomDock {
    * 按住慢慢拖，光就一路亮到最实、也张得最开。这就是「感应按压状态」。
    */
   private risePress(): void {
+    // 流畅优先下不跑 16ms 充能定时器：流光层本来就不渲染，press 没有可见效果
+    if (this.perfMode) {
+      return;
+    }
     if (this.pressTimer >= 0) {
       return;
     }
@@ -240,7 +244,8 @@ export struct BottomDock {
    * 滑动时整条玻璃的受光方向跟着手指走，是「材质在动」而不是「图层在动」。
    */
   private glowTilt(): number {
-    if (this.swipeOn <= 0.5) {
+    // 流畅优先下不做受光面偏转：那会让渐变 angle 每帧变一次，整层渐变重算
+    if (this.perfMode || this.swipeOn <= 0.5) {
       return 0;
     }
     const c: number = this.dockW / 2;
@@ -336,14 +341,14 @@ export struct BottomDock {
         .height('100%')
         .borderRadius(radius)
         // 两档底色：
-        //  · 玻璃档（默认）：20%/24% 半透明，明暗交给背后内容和模糊，透得出来；
-        //  · 流畅优先档：模糊被关掉后，同样 20% 会「透成塑料」，所以底色必须显著加实
-        //    —— 深色 70%、浅色 85% 微暖近白，靠实体感撑住形状，不再依赖模糊。
+        //  · 玻璃档（把开关关掉才用）：20%/24% 半透明，明暗交给背后内容和模糊；
+        //  · 流畅优先档（默认）：没有模糊后 20% 会「透成塑料」，底色必须显著加实
+        //    —— 深色 78%、浅色 90% 微暖近白，靠实体感撑住形状。
         // 浅色不用纯白：纸面上压纯白会变成一条 253 的白板（截图实测过），
         // 用微暖近白（#F6F4EE）贴着米色页面走，实但不刺眼。
         .backgroundColor(this.isDark
-          ? (this.perfMode ? '#B31A1D24' : '#331A1D24')
-          : (this.perfMode ? '#D9F6F4EE' : '#3DFAF9F5'))
+          ? (this.perfMode ? '#C71A1D24' : '#331A1D24')
+          : (this.perfMode ? '#E6F6F4EE' : '#3DFAF9F5'))
       // 流畅优先（perfMode）：关掉实时背景模糊，只留上面的半透明底色。
       // backgroundEffect 采样的是「组件背后」的内容，这里单独叠一层透明模糊列在
       // 底色之上，视觉与原实现等价（高斯模糊是线性算子，半透明底色是常数，模糊后不变），
@@ -371,7 +376,8 @@ export struct BottomDock {
         .borderRadius(radius)
         .linearGradient({
           // 基础 150°，收缩时再转 30°；横滑时按手指左右再偏 ±18°
-          angle: 150 - 30 * this.t() + this.glowTilt(),
+          // 流畅优先下固定角度：收缩时高光不再跟着转，少一次每帧渐变重算
+          angle: this.perfMode ? 150 : (150 - 30 * this.t() + this.glowTilt()),
           colors: [
             // 顶缘高光更锐一档：玻璃上沿要有一条亮线，弯起来才有球面感
             [dockAlpha('#FFFFFFFF', 0.46), 0],
@@ -470,8 +476,11 @@ export struct BottomDock {
   tabBar() {
     Stack({ alignContent: Alignment.Start }) {
       this.dockGlass(DockSize.TAB_H / 2 - 0.5)
-      // 高光带叠在玻璃上（收缩成橙色圆时也会被玻璃/橙色挡住一部分，属正常）
-      this.glowLayer(DockSize.SIDE, this.tabW())
+      // 流畅优先下不画跟手流光：那是每帧随手指重绘的一整条渐变，纯装饰
+      if (!this.perfMode) {
+        // 高光带叠在玻璃上（收缩成橙色圆时也会被玻璃/橙色挡住一部分，属正常）
+        this.glowLayer(DockSize.SIDE, this.tabW())
+      }
       // 收缩时整块染成选中色：参考里收完之后是一枚橙色实心圆
       Column()
         .width('100%')

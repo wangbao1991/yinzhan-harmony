@@ -1,0 +1,45 @@
+# 音栈 v1.2.0 · 以流畅为先
+
+本目录是「音栈 v1.2.0」（`87 / 1.2.0`）的交付快照：**「流畅优先」转为默认**，底栏实度再上一档，并把纯装饰性的逐帧开销全部去掉。外观设置里的开关保留，关掉可回到完整玻璃观感。
+
+## 一、流畅优先转默认
+
+`Settings.perfMode()` 默认 `false → true`；`App.ets` 启动即广播 `perfMode`，底栏首帧就是实色，不会先糊一下再变。
+
+## 二、底色再实一档（仅流畅档）
+
+| 项 | 上一版 | 现在 |
+| --- | --- | --- |
+| 深色 | `#B31A1D24`（70%） | `#C71A1D24`（78%） |
+| 浅色 | `#D9F6F4EE`（85%） | `#E6F6F4EE`（90%） |
+| 玻璃档（开关关） | `#331A1D24` / `#3DFAF9F5` | 不变 |
+
+## 三、去掉的逐帧开销（只在流畅档生效）
+
+| 位置 | 原来 | 现在 |
+| --- | --- | --- |
+| 跟手流光 `glowLayer` | 手指每动一像素重绘 13 段渐变 | 整层不渲染 |
+| 受光面偏转 `glowTilt` | 渐变 angle 每帧变 | 固定 0 |
+| 玻璃高光角度 | `150-30*t+glowTilt` | 固定 150 |
+| 按压充能 `risePress` | 16ms `setInterval` | 直接 return |
+| 横滑坐标广播 `Index.onRootTouch` | 每帧写 `swipeX`/`swipeOn` | 短路不广播 |
+
+保留滚动驱动的收缩/展开：那是导航核心交互，不是装饰。
+
+## 文件
+
+| 文件 | 说明 |
+| --- | --- |
+| `音栈-v1.2.0-以流畅为先-signed.hap` | **已签名，可直接侧载安装**（3,368,695 字节） |
+| `音栈-v1.2.0-以流畅为先-unsigned.hap` | 未签名，供 AGC 正式证书或 DevEco 重签（3,316,384 字节） |
+| `音栈-v1.2.0-以流畅为先-源码工程.zip` | 完整源码工程，195 条目，解压即 `LXMusicHarmony/` |
+| `SHA256SUMS.txt` | 三个交付物的校验值 |
+
+已签名 HAP 使用 OpenHarmony 公共调试证书（`compatibleVersion 26`，bundleName `com.yinzhan.music`），适用于侧载；正式分发需用自有 AGC 证书对 unsigned 包重签。签名材料不随仓库分发。
+
+## 验证
+
+- API 26 release `BUILD SUCCESSFUL`（34 tasks）；自检 71 项 PASS 65 / WARN 4 / FAIL 2。
+- `sign-app success`；`verify-app` → `Verify success`。
+- 落包 `C71A1D24` / `E6F6F4EE` 命中，旧实色归零，玻璃档保留，`perfMode` × 6。
+- 包身份：`com.yinzhan.music / 87 / 1.2.0`。
