@@ -407,7 +407,7 @@ export struct HomePage {
           .height(FLOAT_SPACE)
       }
       .width('100%')
-      .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe, bottom: 150 })
+      .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe })
     }
     .width('100%')
     .height('100%')

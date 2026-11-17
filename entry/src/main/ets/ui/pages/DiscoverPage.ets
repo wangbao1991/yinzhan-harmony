@@ -912,7 +912,7 @@ export struct DiscoverPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe + 8, bottom: 150 })
+    .padding({ left: PAGE_PAD, right: PAGE_PAD, top: this.topSafe + 8 })
     .backgroundColor('#00000000')
   }
 }
