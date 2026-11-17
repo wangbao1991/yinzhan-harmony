@@ -54,6 +54,20 @@ export class Settings {
     Store.get().put(PrefKeys.LIGHT_SENSE, level);
   }
 
+  /**
+   * 流畅优先：关掉底栏实时背景模糊（backgroundEffect），只留半透明底色。
+   * 默认关（保留玻璃观感）；低端机 / 掉帧场景打开后，滚动时不再每帧重算模糊。
+   */
+  perfMode(): boolean {
+    return Store.get().getBool(PrefKeys.PERF_MODE, false);
+  }
+
+  setPerfMode(value: boolean): void {
+    Store.get().put(PrefKeys.PERF_MODE, value);
+    // 底栏是常驻一级页组件、不会重建：只落盘不广播的话要杀掉进程才生效。
+    AppStorage.setOrCreate('perfMode', value);
+  }
+
   quality(): string {
     return Store.get().getString(PrefKeys.QUALITY, '320k');
   }

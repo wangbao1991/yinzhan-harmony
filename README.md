@@ -50,7 +50,8 @@ hvigor/                    构建配置
 
 | 目录 | 版本 | 内容 |
 | --- | --- | --- |
-| [`release/v1.2.0-perf`](release/v1.2.0-perf) | `87 / 1.2.0` | **最新**：流畅性优化（底栏去双层模糊）+ 源码工程 zip + 已签名 HAP + unsigned HAP + 校验值 |
+| [`release/v1.2.0-perfmode`](release/v1.2.0-perfmode) | `87 / 1.2.0` | **最新**：新增「流畅优先」开关，可一键关掉底栏实时毛玻璃 + 源码工程 zip + 已签名 HAP + unsigned HAP + 校验值 |
+| [`release/v1.2.0-perf`](release/v1.2.0-perf) | `87 / 1.2.0` | 前序快照：流畅性优化（底栏去双层模糊） |
 | [`release/v1.2.0-viewport-full`](release/v1.2.0-viewport-full) | `87 / 1.2.0` | 前序快照：内容视口延伸到屏幕底 |
 | [`release/v1.2.0-dock-nowhite`](release/v1.2.0-dock-nowhite) | `87 / 1.2.0` | 前序快照：浅色液态磨砂「去白」 |
 | [`release/v1.2.0-dock-glass`](release/v1.2.0-dock-glass) | `87 / 1.2.0` | 前序快照：液态磨砂通透版（浅色仍偏白） |

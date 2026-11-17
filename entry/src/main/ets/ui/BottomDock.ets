@@ -90,6 +90,8 @@ export struct BottomDock {
   /** 二级页栈深，>0 时只留播放条。 */
   @StorageProp('navDepth') navDepth: number = 0;
   @StorageProp('bottomSafe') bottomSafe: number = 16;
+  /** 流畅优先：true 时 dockGlass 跳过实时模糊，只留半透明底色（外观设置页开关广播）。 */
+  @StorageProp('perfMode') perfMode: boolean = false;
   /** 一镜到底共享元素 id（Index 只在转场瞬间写入，平时是空串）。 */
   @StorageProp('playerGeomId') geomId: string = '';
 
@@ -338,22 +340,27 @@ export struct BottomDock {
         // 浅色不再用纯白：纸面上压纯白 + 提亮 = 一条 253 的白板（截图实测），
         // 和米色页面一对比就是「一大块背景」；改成微暖近白并停止提亮，条子才会化进纸里。
         .backgroundColor(this.isDark ? '#331A1D24' : '#3DFAF9F5')
-        // 性能：不再叠 backgroundBlurStyle。系统材质档位本身带一层模糊 + 底色，
-        // 和 backgroundEffect 是「两层模糊」——滚动时玻璃背后内容每帧都在变，
-        // 双层实时模糊是掉帧主因之一。现在只留 backgroundEffect 一条模糊路径。
-        // 若某 ROM 的 backgroundEffect 不生效，兜底是上面的半透明底色，不会崩。
-        // 液态磨砂核心：大半径模糊 + 饱和度提升 + 微提亮 + 取背后平均色
-        .backgroundEffect({
-          // 半径 30 → 22：视觉上仍是「糊成色块」，但高斯核面积下降约 46%，
-          // 滚动时的实时采样开销明显变小，这是用观感几乎无损换流畅。
-          radius: 22,
-          saturation: this.isDark ? 1.55 : 1.15,
-          // 深色透上去会发灰，提亮补回来；浅色本身就在纸上，再提就把条子推成纯白，
-          // 所以只给 1.01 —— 保一点体积感，不抢页面。
-          brightness: this.isDark ? 1.06 : 1.01,
-          color: this.isDark ? '#0AFFFFFF' : '#00FFFFFF',
-          adaptiveColor: AdaptiveColor.AVERAGE
-        })
+      // 流畅优先（perfMode）：关掉实时背景模糊，只留上面的半透明底色。
+      // backgroundEffect 采样的是「组件背后」的内容，这里单独叠一层透明模糊列在
+      // 底色之上，视觉与原实现等价（高斯模糊是线性算子，半透明底色是常数，模糊后不变），
+      // 但把它从「必然每帧重算」变成「按开关才存在」——低端机 / 掉帧场景可一键关掉。
+      if (!this.perfMode) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .borderRadius(radius)
+          .backgroundEffect({
+            // 半径 30 → 22：视觉上仍是「糊成色块」，但高斯核面积下降约 46%，
+            // 滚动时的实时采样开销明显变小，这是用观感几乎无损换流畅。
+            radius: 22,
+            saturation: this.isDark ? 1.55 : 1.15,
+            // 深色透上去会发灰，提亮补回来；浅色本身就在纸上，再提就把条子推成纯白，
+            // 所以只给 1.01 —— 保一点体积感，不抢页面。
+            brightness: this.isDark ? 1.06 : 1.01,
+            color: this.isDark ? '#0AFFFFFF' : '#00FFFFFF',
+            adaptiveColor: AdaptiveColor.AVERAGE
+          })
+      }
       Column()
         .width('100%')
         .height('100%')
