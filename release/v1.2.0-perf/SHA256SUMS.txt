@@ -1,0 +1,3 @@
+33660799b8e24c73cfd186bbb257faf3bcbaf6a261a2d0d4bc2b8dba30ba7fa5  音栈-v1.2.0-流畅优化-signed.hap
+8d48d5efd35e366bb2ee15ee55d4875d57018541d27f0f2a86bcd0eebf516bd9  音栈-v1.2.0-流畅优化-unsigned.hap
+979247b8c1637ed2dbb5ea6703981838b221a7147180065968a61c30b00bd423  音栈-v1.2.0-流畅优化-源码工程.zip

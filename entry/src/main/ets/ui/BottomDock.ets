@@ -322,9 +322,9 @@ export struct BottomDock {
    * 液态磨砂（v1.2.0 材质迭代）：把底色从 60% 降到 30%，模糊改由 backgroundEffect 承担，
    * 顺带把背后颜色的饱和度拉高（saturation）、整体微提亮（brightness），再用
    * adaptiveColor 取背后平均色 —— 这才是「玻璃」而不是「半透明塑料」的观感。
-   * 通透版再降一档到 20%/30%，兜底 blurStyle 从 ULTRA_THICK 降到 REGULAR/THIN：
-   * 系统材质本身带底色，两层叠着就会发闷，之前「看着还实」就是这个原因。
-   * 旧 backgroundBlurStyle 保留作为兜底：两条路径任一失效，栏体依然是磨砂而非实色。
+   * 通透版再降一档到 20%/30%：底色只压一点，明暗交给背后内容和模糊。
+   * 性能版（本轮）：去掉 backgroundBlurStyle 兜底、radius 30→22、饱和度/提亮下调——
+   * 滚动时玻璃背后内容每帧都在变，双层实时模糊是掉帧主因，只留 backgroundEffect 一条模糊。
    */
   @Builder
   dockGlass(radius: number) {
@@ -338,16 +338,19 @@ export struct BottomDock {
         // 浅色不再用纯白：纸面上压纯白 + 提亮 = 一条 253 的白板（截图实测），
         // 和米色页面一对比就是「一大块背景」；改成微暖近白并停止提亮，条子才会化进纸里。
         .backgroundColor(this.isDark ? '#331A1D24' : '#3DFAF9F5')
-        // 兜底材质必须同步降档：ULTRA_THICK/THICK 自带一层不透明底色，
-        // 和上面的 backgroundEffect 一叠就会「实」，这是之前发闷的主因之一。
-        .backgroundBlurStyle(this.isDark ? BlurStyle.COMPONENT_REGULAR : BlurStyle.COMPONENT_THIN)
+        // 性能：不再叠 backgroundBlurStyle。系统材质档位本身带一层模糊 + 底色，
+        // 和 backgroundEffect 是「两层模糊」——滚动时玻璃背后内容每帧都在变，
+        // 双层实时模糊是掉帧主因之一。现在只留 backgroundEffect 一条模糊路径。
+        // 若某 ROM 的 backgroundEffect 不生效，兜底是上面的半透明底色，不会崩。
         // 液态磨砂核心：大半径模糊 + 饱和度提升 + 微提亮 + 取背后平均色
         .backgroundEffect({
-          radius: 30,
-          saturation: this.isDark ? 1.9 : 1.25,
+          // 半径 30 → 22：视觉上仍是「糊成色块」，但高斯核面积下降约 46%，
+          // 滚动时的实时采样开销明显变小，这是用观感几乎无损换流畅。
+          radius: 22,
+          saturation: this.isDark ? 1.55 : 1.15,
           // 深色透上去会发灰，提亮补回来；浅色本身就在纸上，再提就把条子推成纯白，
           // 所以只给 1.01 —— 保一点体积感，不抢页面。
-          brightness: this.isDark ? 1.10 : 1.01,
+          brightness: this.isDark ? 1.06 : 1.01,
           color: this.isDark ? '#0AFFFFFF' : '#00FFFFFF',
           adaptiveColor: AdaptiveColor.AVERAGE
         })
