@@ -314,10 +314,17 @@ export struct BottomDock {
    * 底栏玻璃（专用，比全局 HdsGlass 更透、光更强）。
    *
    * 「流光」靠两件事叠出来：
-   *   ① 底色只留 ~55% 不透明 + ULTRA_THICK 背景模糊 —— 背后内容（专辑封面、图片）
+   *   ① 底色只留 20%~30% 不透明 + 背景模糊 —— 背后内容（专辑封面、图片）
    *      的颜色会透上来，页面一滚，底栏里的颜色就跟着流动；
    *   ② 150° 斜向受光面，角度随收缩进度转 30° —— 收缩那道手术刀式的变形里，
    *      高光会顺着胶囊扫过去，不是一张死贴图。
+   *
+   * 液态磨砂（v1.2.0 材质迭代）：把底色从 60% 降到 30%，模糊改由 backgroundEffect 承担，
+   * 顺带把背后颜色的饱和度拉高（saturation）、整体微提亮（brightness），再用
+   * adaptiveColor 取背后平均色 —— 这才是「玻璃」而不是「半透明塑料」的观感。
+   * 通透版再降一档到 20%/30%，兜底 blurStyle 从 ULTRA_THICK 降到 REGULAR/THIN：
+   * 系统材质本身带底色，两层叠着就会发闷，之前「看着还实」就是这个原因。
+   * 旧 backgroundBlurStyle 保留作为兜底：两条路径任一失效，栏体依然是磨砂而非实色。
    */
   @Builder
   dockGlass(radius: number) {
@@ -326,8 +333,21 @@ export struct BottomDock {
         .width('100%')
         .height('100%')
         .borderRadius(radius)
-        .backgroundColor(this.isDark ? '#991A1D24' : '#99FBFBFB')
-        .backgroundBlurStyle(this.isDark ? BlurStyle.COMPONENT_ULTRA_THICK : BlurStyle.COMPONENT_THICK)
+        // 20% / 30%：再透一档。60% → 30% → 现在，底色只负责「压一点点黑」，
+        // 明暗几乎全交给背后内容和模糊，这才是玻璃；再高就又回到半透明塑料。
+        .backgroundColor(this.isDark ? '#331A1D24' : '#4DFBFBFB')
+        // 兜底材质必须同步降档：ULTRA_THICK/THICK 自带一层不透明底色，
+        // 和上面的 backgroundEffect 一叠就会「实」，这是之前发闷的主因之一。
+        .backgroundBlurStyle(this.isDark ? BlurStyle.COMPONENT_REGULAR : BlurStyle.COMPONENT_THIN)
+        // 液态磨砂核心：大半径模糊 + 饱和度提升 + 微提亮 + 取背后平均色
+        .backgroundEffect({
+          radius: 30,
+          saturation: this.isDark ? 1.9 : 1.6,
+          // 透上去之后整体会略微发灰，提亮补回来一点，避免「脏」而不是「清」
+          brightness: this.isDark ? 1.10 : 1.07,
+          color: this.isDark ? '#0AFFFFFF' : '#00FFFFFF',
+          adaptiveColor: AdaptiveColor.AVERAGE
+        })
       Column()
         .width('100%')
         .height('100%')
@@ -336,9 +356,12 @@ export struct BottomDock {
           // 基础 150°，收缩时再转 30°；横滑时按手指左右再偏 ±18°
           angle: 150 - 30 * this.t() + this.glowTilt(),
           colors: [
-            [dockAlpha('#FFFFFFFF', 0.38), 0],
-            [dockAlpha('#FFFFFFFF', 0.10), 0.28],
-            ['#00FFFFFF', 0.62]
+            // 顶缘高光更锐一档：玻璃上沿要有一条亮线，弯起来才有球面感
+            [dockAlpha('#FFFFFFFF', 0.46), 0],
+            [dockAlpha('#FFFFFFFF', 0.12), 0.24],
+            ['#00FFFFFF', 0.56],
+            // 底缘内阴影：给栏体一点厚度，不然浮在内容上像贴纸
+            [dockAlpha('#000000', this.isDark ? 0.12 : 0.05), 1]
           ]
         })
       Column()
