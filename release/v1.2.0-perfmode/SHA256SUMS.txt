@@ -1,2 +1,0 @@
-fc1582a67d8f83660a313aeca411b7a7d803601bca77339ee619cfcb71d150ea  音栈-v1.2.0-流畅优先-unsigned.hap
-1085f8d6d8725d7a0e755e05fe7d8b209f2555b6d85a90cc35ab6f6a87bc2ecc  音栈-v1.2.0-流畅优先-源码工程.zip

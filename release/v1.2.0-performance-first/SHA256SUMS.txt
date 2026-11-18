@@ -1,2 +1,0 @@
-f9789b351c08ef9e831c3c94097b982b063cf470ebc6c8e3cbd77cf67ad86fe9  音栈-v1.2.0-以流畅为先-unsigned.hap
-c47d47c9bff9155f19e4ddec2ac8cd16b56622649ceb2633d1ece157ec265220  音栈-v1.2.0-以流畅为先-源码工程.zip

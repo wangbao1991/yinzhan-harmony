@@ -50,17 +50,9 @@ hvigor/                    构建配置
 
 | 目录 | 版本 | 内容 |
 | --- | --- | --- |
-| [`release/v1.3.0`](release/v1.3.0) | `94 / 1.3.0` | **最新**：发现页去广告 + 收缩态命中修复 + 底栏弹簧丝滑伸缩（springMotion 可中断）+ 毛玻璃与流光整体移除 + 字号归档（30 处）/ 收起态两行歌名 + 源码工程 zip + unsigned HAP + 校验值 |
-| [`release/v1.2.0-performance-first`](release/v1.2.0-performance-first) | `87 / 1.2.0` | 前序快照：以流畅为先（perfMode 默认开、实色 78%/90%、去流光/按压/坐标广播） |
-| [`release/v1.2.0-perfmode-solid`](release/v1.2.0-perfmode-solid) | `87 / 1.2.0` | 前序快照：流畅优先档「加实」（70%/85%） |
-| [`release/v1.2.0-perfmode`](release/v1.2.0-perfmode) | `87 / 1.2.0` | 前序快照：新增「流畅优先」开关（该档偏透） |
-| [`release/v1.2.0-perf`](release/v1.2.0-perf) | `87 / 1.2.0` | 前序快照：流畅性优化（底栏去双层模糊） |
-| [`release/v1.2.0-viewport-full`](release/v1.2.0-viewport-full) | `87 / 1.2.0` | 前序快照：内容视口延伸到屏幕底 |
-| [`release/v1.2.0-dock-nowhite`](release/v1.2.0-dock-nowhite) | `87 / 1.2.0` | 前序快照：浅色液态磨砂「去白」 |
-| [`release/v1.2.0-dock-glass`](release/v1.2.0-dock-glass) | `87 / 1.2.0` | 前序快照：液态磨砂通透版（浅色仍偏白） |
-| [`release/v1.2.0-dock-taller`](release/v1.2.0-dock-taller) | `87 / 1.2.0` | 前序快照：底栏加宽到 52vp（材质仍为不透明底） |
+| [`release/v1.3.0`](release/v1.3.0) | `94 / 1.3.0` | **最新且唯一**：发现页去广告 + 收缩态命中修复 + 底栏弹簧丝滑伸缩（springMotion 可中断）+ 毛玻璃与流光整体移除 + 字号归档（30 处）/ 收起态两行歌名 + 源码工程 zip + unsigned HAP + 校验值 |
 
-仓库只分发**未签名 HAP**（`音栈-v1.3.0-unsigned.hap`），签名材料（证书链 / profile / 密钥）一律不入库；正式分发请用自有 AGC 证书或 DevEco 对 unsigned 包重签。
+`release/` 只保留最新版本快照，历史快照不入库（可从提交历史回溯）。仓库只分发**未签名 HAP**（`音栈-v1.3.0-unsigned.hap`），签名材料（证书链 / profile / 密钥）一律不入库；正式分发请用自有 AGC 证书或 DevEco 对 unsigned 包重签。
 
 ## 第三方组件
 

@@ -1,2 +1,0 @@
-04e30aa453b307d2b23d4287813b2e2c5ea67418edd60b1c8a6b4efd9875bfa1  音栈-v1.2.0-液态磨砂去白-unsigned.hap
-9a3f7ed267a8314d675b608a973bdb9d4404874ce5296a3c52fa462a7177d86a  音栈-v1.2.0-液态磨砂去白-源码工程.zip
