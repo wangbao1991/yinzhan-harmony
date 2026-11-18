@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>音栈 · 底栏收起过渡</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 28px 56px;
+    background: #F6F7FB; color: #1B1D23;
+    font-family: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 25px; font-weight: 700; margin: 0 0 8px; letter-spacing: -.2px; }
+  .sub { font-size: 13.5px; color: #6B7280; line-height: 1.75; margin: 0 0 26px; }
+  .card {
+    background: #fff; border-radius: 16px; padding: 24px 26px 22px;
+    box-shadow: 0 1px 2px rgba(20,26,40,.04), 0 8px 24px rgba(20,26,40,.05);
+    margin-bottom: 18px; border: 1px solid #EDF0F5;
+  }
+  h2 { font-size: 16px; font-weight: 650; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+  .tag.live { background: #EAF0FF; color: #3A5BD9; }
+  .desc { font-size: 13px; line-height: 1.85; color: #5A6069; margin: 0 0 16px; }
+  .desc b { color: #1B1D23; font-weight: 650; }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px;
+    background: #F2F4F9; border-radius: 4px; padding: 1.5px 5px; color: #3B4A63;
+  }
+
+  /* ── 预览区 ── */
+  .stage {
+    position: relative; height: 320px; border-radius: 14px; overflow: hidden;
+    background: linear-gradient(160deg,#20242E,#2B303C 45%,#343A48);
+    display: flex; flex-direction: column; justify-content: flex-end;
+  }
+  .fake-list { padding: 0 14px 8px; opacity: .5; }
+  .fake-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .fake-art { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg,#575F73,#3C4353); flex: none; }
+  .fake-lines { flex: 1; }
+  .fake-l1 { height: 7px; width: 56%; border-radius: 4px; background: rgba(255,255,255,.34); margin-bottom: 5px; }
+  .fake-l2 { height: 6px; width: 34%; border-radius: 4px; background: rgba(255,255,255,.16); }
+
+  .shell { width: 100%; padding: 0 14px 14px; }
+
+  /* 上方悬浮播放条 */
+  .shellbar {
+    height: 58px; border-radius: 20px; margin-bottom: 8px;
+    background: rgba(248,249,252,.86); backdrop-filter: blur(20px);
+    border: .8px solid rgba(255,255,255,.5);
+    box-shadow: 0 8px 18px rgba(0,0,0,.18);
+    display: flex; align-items: center; gap: 10px; padding: 0 8px 0 8px;
+    transform-origin: bottom center; overflow: hidden;
+  }
+
+  /* 底栏容器 */
+  .tabwrap { position: relative; height: 62px; }
+
+  .plate {
+    position: absolute; left: 0; bottom: 0; width: 100%; height: 62px;
+    border-radius: 26px; background: rgba(248,249,252,.86);
+    backdrop-filter: blur(20px); border: .8px solid rgba(255,255,255,.55);
+    box-shadow: 0 10px 26px rgba(0,0,0,.22);
+  }
+  .pill {
+    position: absolute; left: 0; top: 8px; width: 33.333%; height: 46px;
+    border-radius: 23px; background: rgba(76,111,255,.16); transform-origin: left center;
+  }
+  .tabs {
+    position: absolute; left: 0; bottom: 0; width: 100%; height: 62px;
+    display: flex;
+  }
+  .tab {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 3px; color: #8A909C;
+  }
+  .tab.on { color: #4C6FFF; }
+  .tab svg { width: 22px; height: 22px; display: block; }
+  .tab span { font-size: 9.5px; line-height: 1; }
+
+  /* 收起态 */
+  .collapsed {
+    position: absolute; left: 0; bottom: 0; width: 100%; height: 62px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .fab {
+    width: 52px; height: 52px; border-radius: 26px; flex: none;
+    background: #4C6FFF; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 6px 16px rgba(76,111,255,.36);
+  }
+  .fab svg { width: 23px; height: 23px; }
+  .mini {
+    flex: 1; height: 52px; border-radius: 26px;
+    background: rgba(248,249,252,.86); backdrop-filter: blur(20px);
+    border: .8px solid rgba(255,255,255,.5);
+    display: flex; align-items: center; gap: 8px; padding: 0 10px 0 9px;
+    transform-origin: left center; overflow: hidden;
+  }
+  .mini-art { width: 34px; height: 34px; border-radius: 17px; background: linear-gradient(135deg,#8A94AA,#5C6579); flex: none; }
+  .mini-txt { flex: 1; min-width: 0; }
+  .mini-t1 { font-size: 13px; font-weight: 600; color: #1B1D23; line-height: 1.25; white-space: nowrap; }
+  .mini-t2 { font-size: 10.5px; color: #8A909C; line-height: 1.3; white-space: nowrap; }
+  .mini-btns { display: flex; align-items: center; gap: 6px; flex: none; }
+  .mini-btns svg { width: 17px; height: 17px; }
+
+  /* ── 控制条 ── */
+  .ctrl { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+  .ctrl input[type=range] { flex: 1; -webkit-appearance: none; height: 4px; border-radius: 3px; background: #E4E8F0; outline: none; }
+  .ctrl input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #4C6FFF; cursor: pointer; box-shadow: 0 2px 6px rgba(76,111,255,.4);
+  }
+  .btn {
+    font-size: 12.5px; font-weight: 600; color: #3A5BD9; background: #EAF0FF;
+    border: none; border-radius: 9px; padding: 8px 14px; cursor: pointer;
+  }
+  .btn:hover { background: #DEE7FF; }
+  .val { font-size: 12px; color: #8C929C; font-variant-numeric: tabular-nums; min-width: 46px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 6px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #EFF2F7; vertical-align: top; }
+  th { font-size: 11.5px; color: #8C929C; font-weight: 600; letter-spacing: .3px; }
+  td:first-child { white-space: nowrap; color: #3B4A63; font-family: "SF Mono", Menlo, monospace; font-size: 11.5px; }
+  .concl {
+    background: linear-gradient(180deg,#F4F7FF,#FBFCFE); border: 1px solid #E2E9FA;
+    border-radius: 14px; padding: 18px 20px; font-size: 13px; line-height: 1.9; color: #33405C;
+  }
+  .concl b { color: #2B3A5B; }
+  .foot { text-align: center; font-size: 11.5px; color: #A2A9B4; margin-top: 22px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 10px; }
+  .legend span { font-size: 11.5px; color: #5A6069; display: flex; align-items: center; gap: 7px; }
+  .dot { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>底栏收起：把「换形态」拆成四段</h1>
+  <p class="sub">
+    拖动下面的滑块，就是滚动时那 90vp 的进度。注意看过程中先消失的是什么、后消失的是什么——
+    现在的做法不是一个形态淡出、另一个淡入，而是各自按自己的节奏退场。
+  </p>
+
+  <div class="card">
+    <h2>拖动看过渡<span class="tag live">可交互</span></h2>
+    <div class="stage" id="stage">
+      <div class="fake-list">
+        <div class="fake-row"><div class="fake-art"></div><div class="fake-lines"><div class="fake-l1"></div><div class="fake-l2"></div></div></div>
+        <div class="fake-row"><div class="fake-art"></div><div class="fake-lines"><div class="fake-l1" style="width:44%"></div><div class="fake-l2" style="width:28%"></div></div></div>
+        <div class="fake-row"><div class="fake-art"></div><div class="fake-lines"><div class="fake-l1" style="width:62%"></div><div class="fake-l2" style="width:36%"></div></div></div>
+        <div class="fake-row"><div class="fake-art"></div><div class="fake-lines"><div class="fake-l1" style="width:38%"></div><div class="fake-l2" style="width:22%"></div></div></div>
+      </div>
+      <div class="shell">
+        <div class="shellbar" id="shellbar">
+          <div class="mini-art" style="width:40px;height:40px;border-radius:10px"></div>
+          <div class="mini-txt">
+            <div class="mini-t1" style="font-size:13.5px">惊惶</div>
+            <div class="mini-t2" style="font-size:10.5px">沼泽乐队</div>
+          </div>
+          <div class="mini-btns">
+            <svg viewBox="0 0 24 24" fill="#1B1D23"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-2 6l6 4-6 4z"/></svg>
+            <svg viewBox="0 0 24 24" fill="#1B1D23"><path d="M6 5l9 7-9 7zM17 5h2v14h-2z"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1B1D23" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          </div>
+        </div>
+
+        <div class="tabwrap">
+          <div class="plate" id="plate"></div>
+          <div class="pill" id="pill"></div>
+          <div class="tabs" id="tabs">
+            <div class="tab on">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.2l8.5 7.3V20a1 1 0 0 1-1 1h-5v-5.6h-5V21h-5a1 1 0 0 1-1-1v-9.5z"/></svg>
+              <span>首页</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.6a9.4 9.4 0 1 0 0 18.8 9.4 9.4 0 0 0 0-18.8zm3.4 12.6l-4.6-2.7V7.3h1.7v4.2l3.8 2.2z"/></svg>
+              <span>发现</span>
+            </div>
+            <div class="tab">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2zm8.6 3.6c0 .5-.1 1-.2 1.5l1.7 1.3-1.7 3-2-.8c-.8.6-1.6 1.1-2.5 1.4l-.3 2.1h-3.4l-.3-2.1c-.9-.3-1.7-.8-2.5-1.4l-2 .8-1.7-3 1.7-1.3a7.6 7.6 0 0 1 0-3L3.4 11 5.1 8l2 .8c.8-.6 1.6-1.1 2.5-1.4l.3-2.1h3.4l.3 2.1c.9.3 1.7.8 2.5 1.4l2-.8L19.8 11l-1.7 1.3c.1.5.2 1 .2 1.5z"/></svg>
+              <span>设置</span>
+            </div>
+          </div>
+
+          <div class="collapsed" id="collapsed">
+            <div class="fab" id="fab">
+              <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 3.2l8.5 7.3V20a1 1 0 0 1-1 1h-5v-5.6h-5V21h-5a1 1 0 0 1-1-1v-9.5z"/></svg>
+            </div>
+            <div class="mini" id="mini">
+              <div class="mini-art"></div>
+              <div class="mini-txt">
+                <div class="mini-t1">惊惶</div>
+                <div class="mini-t2">沼泽乐队</div>
+              </div>
+              <div class="mini-btns">
+                <svg viewBox="0 0 24 24" fill="#1B1D23"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-2 6l6 4-6 4z"/></svg>
+                <svg viewBox="0 0 24 24" fill="#1B1D23"><path d="M6 5l9 7-9 7zM17 5h2v14h-2z"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="#1B1D23" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctrl">
+      <input type="range" id="slider" min="0" max="100" value="0">
+      <span class="val" id="val">0.00</span>
+      <button class="btn" id="play">播一遍</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>各元素退场/入场的区间</h2>
+    <div class="desc">
+      横轴是收起进度 <code>c</code>（滚动 0→90vp），纵轴是不透明度。六条线错开排布，
+      任何时刻都只有一两个元素在显著变化，所以眼睛看到的是「一个接一个」，而不是「一起糊」。
+    </div>
+    <svg viewBox="0 0 860 344" id="chart">
+      <g id="grid"></g>
+      <g id="curves"></g>
+    </svg>
+    <div class="legend">
+      <span><i class="dot" style="background:#B9C2D6"></i>指示器</span>
+      <span><i class="dot" style="background:#7C8AA6"></i>文字</span>
+      <span><i class="dot" style="background:#4C6FFF"></i>图标</span>
+      <span><i class="dot" style="background:#2E9E6B"></i>底板</span>
+      <span><i class="dot" style="background:#E0872A"></i>圆按钮</span>
+      <span><i class="dot" style="background:#C0433E"></i>播放胶囊</span>
+      <span><i class="dot" style="background:#8A6FD6"></i>外壳播放条</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>每一段在做什么</h2>
+    <table>
+      <tr><th style="width:110px">进度区间</th><th style="width:120px">元素</th><th>动作</th></tr>
+      <tr><td>0.00 → 0.32</td><td>选中指示器</td><td>最先退。它是整条栏里最「重」的色块，早走一步，后面收窄时不会留一块颜色卡在半路。</td></tr>
+      <tr><td>0.02 → 0.34</td><td>标签文字</td><td>文字比图标先走。三格收窄时字会先挤在一起，先退掉就没有挤压感。</td></tr>
+      <tr><td>0.00 → 0.82</td><td>整条宽度</td><td>100% → 64%，<b>只收右边</b>。左边界钉死，图标自然聚拢，圆按钮才会从原来的位置长出来。</td></tr>
+      <tr><td>0.30 → 0.68</td><td>图标</td><td>文字走完才开始。此时栏已经收窄，看到的是「三个图标往左靠、逐个隐去」。</td></tr>
+      <tr><td>0.52 → 0.96</td><td>白色底板</td><td>最后溶解。它是「栏体」本身，留着它，视觉上是栏体化开，而不是整块被切掉。</td></tr>
+      <tr><td>0.34 → 0.80</td><td>圆按钮</td><td>0.72 → 1 放大浮现。有 scale 才有「弹出来」的重量感，纯淡入像颜色变深。</td></tr>
+      <tr><td>0.46 → 0.96</td><td>播放胶囊</td><td>从左边缘展开（scaleX 0.94→1，左锚点），同时上浮 4vp。接住圆按钮的节奏。</td></tr>
+      <tr><td>0.06 → 0.54</td><td>外壳播放条</td><td>比胶囊早一步退干净，中间是低透明度交叉，不会出现「两条播放条同时清晰」。</td></tr>
+    </table>
+  </div>
+
+  <div class="concl">
+    <b>为什么这样比交叉淡化丝滑：</b>交叉淡化是两条相反的曲线同时走，
+    中间必然有一段两者都半透明——看起来像两套 UI 叠着、糊成一片。
+    分段之后，同一时刻只有一个元素在明显变化，其余是静的，
+    眼睛读到的是连续的「动作」，而不是一次性的「切换」。
+  </div>
+
+  <p class="foot">参数取自 ui/Shell.ets 的 stage() / barWidthPct()、pages/Index.ets 的 barStage()　|　自检 34 项 PASS 32 / WARN 2 / FAIL 0</p>
+</div>
+
+<script>
+  const stage = (c, a, b) => a >= b ? (c >= b ? 1 : 0) : Math.max(0, Math.min(1, (c - a) / (b - a)));
+  const easeOut = v => 1 - Math.pow(1 - v, 3);
+  const $ = id => document.getElementById(id);
+
+  const el = {
+    plate: $('plate'), pill: $('pill'), tabs: $('tabs'),
+    collapsed: $('collapsed'), fab: $('fab'), mini: $('mini'),
+    shellbar: $('shellbar'), val: $('val'), slider: $('slider')
+  };
+
+  function render(c) {
+    // 展开态：只收右边
+    const w = 100 - 36 * easeOut(stage(c, 0, 0.82));
+    el.plate.style.width = w + '%';
+    el.tabs.style.width = w + '%';
+    el.pill.style.width = (w / 3) + '%';
+
+    // 分层退场
+    el.pill.style.opacity = 1 - stage(c, 0, 0.32);
+    el.tabs.querySelectorAll('.tab span').forEach(s => { s.style.opacity = 1 - stage(c, 0.02, 0.34); });
+    el.tabs.querySelectorAll('.tab svg').forEach(s => { s.style.opacity = 1 - stage(c, 0.30, 0.68); });
+    el.plate.style.opacity = 1 - stage(c, 0.52, 0.96);
+
+    // 外壳播放条
+    const sb = stage(c, 0.06, 0.54);
+    el.shellbar.style.opacity = 1 - sb;
+    el.shellbar.style.transform = 'translateY(' + (-12 * easeOut(sb)) + 'px)';
+
+    // 圆按钮 + 胶囊
+    const fb = stage(c, 0.34, 0.80);
+    el.fab.style.opacity = fb;
+    el.fab.style.transform = 'scale(' + (0.72 + 0.28 * easeOut(fb)) + ')';
+
+    const mn = stage(c, 0.46, 0.96);
+    el.mini.style.opacity = mn;
+    el.mini.style.transform = 'translateY(' + (4 * (1 - easeOut(mn))) + 'px) scaleX(' + (0.94 + 0.06 * easeOut(mn)) + ')';
+
+    el.val.textContent = c.toFixed(2);
+    el.slider.value = Math.round(c * 100);
+  }
+
+  // ── 曲线图 ──
+  const X0 = 62, X1 = 820, Y0 = 34, Y1 = 272;
+  const px = c => X0 + c * (X1 - X0);
+  const py = o => Y1 - o * (Y1 - Y0);
+
+  const series = [
+    { name: '指示器', color: '#B9C2D6', f: c => 1 - stage(c, 0, 0.32) },
+    { name: '文字', color: '#7C8AA6', f: c => 1 - stage(c, 0.02, 0.34) },
+    { name: '图标', color: '#4C6FFF', f: c => 1 - stage(c, 0.30, 0.68) },
+    { name: '底板', color: '#2E9E6B', f: c => 1 - stage(c, 0.52, 0.96) },
+    { name: '圆按钮', color: '#E0872A', f: c => stage(c, 0.34, 0.80) },
+    { name: '播放胶囊', color: '#C0433E', f: c => stage(c, 0.46, 0.96) },
+    { name: '外壳播放条', color: '#8A6FD6', f: c => 1 - stage(c, 0.06, 0.54) }
+  ];
+
+  let gridHtml = '';
+  for (let i = 0; i <= 10; i++) {
+    const x = px(i / 10);
+    gridHtml += '<line x1="' + x + '" y1="' + Y0 + '" x2="' + x + '" y2="' + Y1 + '" stroke="#F0F2F7"/>';
+    gridHtml += '<text x="' + x + '" y="' + (Y1 + 18) + '" font-size="10" fill="#8C929C" text-anchor="middle">' + (i / 10).toFixed(1) + '</text>';
+  }
+  for (let i = 0; i <= 4; i++) {
+    const y = py(i / 4);
+    gridHtml += '<line x1="' + X0 + '" y1="' + y + '" x2="' + X1 + '" y2="' + y + '" stroke="#F0F2F7"/>';
+    gridHtml += '<text x="' + (X0 - 10) + '" y="' + (y + 4) + '" font-size="10" fill="#8C929C" text-anchor="end">' + (i * 25) + '%</text>';
+  }
+  gridHtml += '<text x="' + ((X0 + X1) / 2) + '" y="' + (Y1 + 40) + '" font-size="10.5" fill="#8C929C" text-anchor="middle">收起进度 c</text>';
+  $('grid').innerHTML = gridHtml;
+
+  let curveHtml = '';
+  series.forEach(s => {
+    let d = '';
+    for (let i = 0; i <= 100; i++) {
+      const c = i / 100;
+      d += (i === 0 ? 'M ' : ' L ') + px(c).toFixed(1) + ',' + py(s.f(c)).toFixed(1);
+    }
+    curveHtml += '<path d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>';
+  });
+  // 当前进度竖线
+  curveHtml += '<line id="cursor" x1="' + X0 + '" y1="' + Y0 + '" x2="' + X0 + '" y2="' + Y1 + '" stroke="#1B1D23" stroke-width="1.2" stroke-dasharray="4 4" opacity="0"/>';
+  $('curves').innerHTML = curveHtml;
+
+  el.slider.addEventListener('input', e => {
+    const c = e.target.value / 100;
+    render(c);
+    const cur = $('cursor');
+    cur.setAttribute('x1', px(c)); cur.setAttribute('x2', px(c)); cur.setAttribute('opacity', '.55');
+  });
+
+  // 播一遍：0 → 1 → 0，各 700ms
+  $('play').addEventListener('click', () => {
+    const t0 = performance.now();
+    const dur = 700;
+    const step = now => {
+      const t = (now - t0) / dur;
+      let c;
+      if (t <= 1) c = easeOut(t);
+      else if (t <= 2) c = 1 - easeOut(t - 1);
+      else { render(0); const cur = $('cursor'); cur.setAttribute('opacity', '0'); return; }
+      render(Math.max(0, Math.min(1, c)));
+      const cur = $('cursor');
+      cur.setAttribute('x1', px(c)); cur.setAttribute('x2', px(c)); cur.setAttribute('opacity', '.55');
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+
+  render(0);
+</script>
+</body>
+</html>

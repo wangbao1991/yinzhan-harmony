@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>音栈 · 发现页：筛选带为什么压住了榜单</title>
+<style>
+  :root{
+    --ink:#12151c; --ink2:#4a505e; --ink3:#7c8494;
+    --line:#e6e9f0; --brand:#2d6cff; --bg:#f5f7fb; --card:#fff;
+    --ok:#0a8f52; --bad:#c2334a; --warn:#b06a00;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:44px 24px 64px;background:
+      radial-gradient(1200px 520px at 18% -10%, #e8eeff 0%, rgba(232,238,255,0) 62%),
+      radial-gradient(900px 420px at 92% 4%, #f3e9ff 0%, rgba(243,233,255,0) 58%),
+      var(--bg);
+    color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;letter-spacing:.14em;
+    color:var(--bad);background:#fdeef1;border:1px solid #f7dde2;padding:6px 12px;border-radius:999px;font-weight:600}
+  h1{font-size:33px;line-height:1.26;margin:18px 0 10px;letter-spacing:-.4px}
+  h1 em{font-style:normal;background:linear-gradient(100deg,#c2334a,#8b5cf6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{font-size:15.2px;line-height:1.85;color:var(--ink2);max-width:800px}
+  .lead b{color:var(--ink)}
+
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;margin-top:24px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 18px 44px -30px rgba(16,24,40,.3)}
+  .stage h2{font-size:17.5px;margin:0 0 4px}
+  .stage .sub{font-size:13px;color:var(--ink3);margin:0 0 20px}
+
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:34px}
+  .case{text-align:center}
+  .tag{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.06em;margin-bottom:10px;
+    padding:4px 10px;border-radius:999px}
+  .case.before .tag{color:var(--bad);background:#fdf0f2;border:1px solid #f8dfe3}
+  .case.after .tag{color:var(--ok);background:#effaf4;border:1px solid #d8f0e3}
+
+  .phone{position:relative;border:1px solid #e1e6ef;border-radius:20px;overflow:hidden;background:#fff;
+    padding:10px 10px 10px;box-shadow:0 14px 34px -26px rgba(16,24,40,.5)}
+  .zone{position:relative;border-radius:8px;margin-bottom:6px}
+  .zt{position:absolute;right:6px;top:6px;font-size:9.5px;letter-spacing:.06em;padding:2px 6px;border-radius:5px;
+    background:rgba(255,255,255,.75);color:#5a6273}
+
+  .t-head{background:#eef3ff;padding:8px 10px 10px;border:1px dashed #b9cdfa}
+  .t-head .big{font-size:21px;font-weight:800;letter-spacing:-.5px;color:#12151c}
+  .t-head .small{font-size:9.5px;color:#7c8494;margin-top:2px}
+  .t-seg{background:rgba(230,247,238,.90);border:1px dashed #9fd9ba;padding:6px 8px;display:flex;gap:6px;
+    position:relative;z-index:3}
+  .pill{font-size:9.5px;padding:5px 10px;border-radius:999px;background:#fff;color:#3a4252;border:1px solid #e3e7f0}
+  .pill.on{background:#2d6cff;color:#fff;border-color:#2d6cff}
+  .t-chips{background:rgba(255,246,229,.90);border:1px dashed #ecc98a;padding:6px 8px;display:flex;gap:5px;
+    overflow:hidden;position:relative;z-index:3}
+  .chip{font-size:9px;padding:4px 8px;border-radius:999px;background:#fff;border:1px solid #e6e9f0;color:#4a505e;white-space:nowrap}
+  .chip.on{background:#2d6cff;color:#fff;border-color:#2d6cff}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;position:relative;z-index:1}
+  .cov{aspect-ratio:1;border-radius:9px;position:relative;overflow:hidden}
+  .cov span{position:absolute;left:6px;bottom:5px;font-size:8.5px;color:rgba(255,255,255,.9)}
+  .cov b{position:absolute;left:0;right:0;top:38%;text-align:center;color:#fff;font-size:11px;font-weight:700}
+  .c1{background:linear-gradient(150deg,#6c5ce7,#3a2fb8)}
+  .c2{background:linear-gradient(150deg,#3fbf7f,#1c8a58)}
+  .c3{background:linear-gradient(150deg,#4aa3f0,#1f6fbf)}
+  .c4{background:linear-gradient(150deg,#f0605a,#b52f34)}
+
+  .shift{transform:translateY(-64px)}
+
+  .note{font-size:12.4px;line-height:1.65;color:var(--ink2);margin-top:12px;min-height:42px;text-align:left}
+  .note b{color:var(--ink)}
+  .note em{font-style:normal;color:var(--bad);font-weight:600}
+  .case.after .note em{color:var(--ok)}
+
+  table{width:100%;border-collapse:collapse;margin-top:4px;font-size:13.2px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11.5px;letter-spacing:.08em;color:var(--ink3);font-weight:700}
+  tr:last-child td{border-bottom:none}
+  td b{color:var(--ink)}
+  .num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.2px;color:#33405c;
+    background:#f1f4fb;border:1px solid #e2e8f6;border-radius:5px;padding:1px 5px}
+  /* 表格里整格用等宽字体，不要套 code 底纹，否则整列变成一块蓝 */
+  td.num{background:none;border:none;border-bottom:1px solid var(--line);padding:11px 12px;color:#33405c}
+
+  ul.rules{list-style:none;padding:0;margin:12px 0 0}
+  ul.rules li{position:relative;padding:9px 0 9px 26px;font-size:13.2px;line-height:1.7;color:var(--ink2);
+    border-bottom:1px dashed #eef1f7}
+  ul.rules li:last-child{border-bottom:none}
+  ul.rules li::before{content:"";position:absolute;left:6px;top:17px;width:7px;height:7px;border-radius:50%;
+    background:var(--brand);box-shadow:0 0 0 3px #e7efff}
+  ul.rules li b{color:var(--ink)}
+
+  footer{margin-top:34px;font-size:12.2px;color:var(--ink3);line-height:1.9}
+  footer code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  @media (max-width:780px){.pair{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <span class="eyebrow">发现页 · 布局分层错了</span>
+  <h1>标题层实际有<em>四行高</em>，内容却按<em>一行</em>让位</h1>
+  <p class="lead">
+    你圈到的现象是：<b>「排行榜 / 推荐歌单」那排胶囊浮在榜单卡片上，平台那一排也被卡片穿过去</b>，
+    往上滑再回弹时卡片直接钻进了平台行里。原因不在间距调得小，而在<b>分层错了</b>——
+    大标题、分段、平台筛选原本全塞在同一个悬浮层里（实际约 116vp 高），
+    可是下面的内容只按「一个大标题」（74vp）留了白，剩下的四十多 vp 就是重叠区。
+  </p>
+
+  <div class="stage">
+    <h2>改前 / 改后</h2>
+    <p class="sub">同一块屏幕，左边是分层错位的版本，右边是现在装进包里的版本</p>
+    <div class="pair">
+
+      <div class="case before">
+        <span class="tag">改之前 · 悬浮层摞了四行</span>
+        <div class="phone">
+          <div class="zone t-head">
+            <div class="big">发现</div>
+            <div class="small">榜单、歌单，按平台浏览</div>
+            <span class="zt">标题层</span>
+          </div>
+          <div class="zone t-seg">
+            <span class="pill on">排行榜</span><span class="pill">推荐歌单</span>
+            <span class="zt">也在标题层</span>
+          </div>
+          <div class="zone t-chips">
+            <span class="chip on">网易云</span><span class="chip">QQ</span><span class="chip">酷我</span>
+            <span class="chip">酷狗</span><span class="chip">咪咕</span>
+            <span class="zt">还在标题层</span>
+          </div>
+          <div class="grid shift" style="margin-top:22px">
+            <div class="cov c1"><b>飙升榜</b><span>100 首</span></div>
+            <div class="cov c2"><b>新歌榜</b><span>100 首</span></div>
+            <div class="cov c3"><b>原创榜</b><span>100 首</span></div>
+            <div class="cov c4"><b>热歌榜</b><span>200 首</span></div>
+          </div>
+        </div>
+        <div class="note">
+          悬浮层一直盖在内容上，卡片从它底下穿过去：<em>滑动回弹时，卡片就停在平台那一排里</em>。
+        </div>
+      </div>
+
+      <div class="case after">
+        <span class="tag">改之后 · 三段分开</span>
+        <div class="phone">
+          <div class="zone t-head">
+            <div class="big">发现</div>
+            <div class="small">榜单、歌单，按平台浏览</div>
+            <span class="zt">只剩标题</span>
+          </div>
+          <div class="zone t-seg">
+            <span class="pill on">排行榜</span><span class="pill">推荐歌单</span>
+            <span class="zt">筛选带（常驻）</span>
+          </div>
+          <div class="zone t-chips">
+            <span class="chip on">网易云</span><span class="chip">QQ</span><span class="chip">酷我</span>
+            <span class="chip">酷狗</span><span class="chip">咪咕</span>
+            <span class="zt">同一带内</span>
+          </div>
+          <div class="grid" style="margin-top:6px">
+            <div class="cov c1"><b>飙升榜</b><span>100 首</span></div>
+            <div class="cov c2"><b>新歌榜</b><span>100 首</span></div>
+            <div class="cov c3"><b>原创榜</b><span>100 首</span></div>
+            <div class="cov c4"><b>热歌榜</b><span>200 首</span></div>
+          </div>
+        </div>
+        <div class="note">
+          标题层只负责标题；<b>筛选带移到内容区顶部常驻</b>，列表在自己那一格里滚，
+          滚到头也只会停在筛选带下面。
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>错在哪：三个数字对不上</h2>
+    <p class="sub">不是「再往下挪一点」的问题，是留白和实际高度不是同一份账</p>
+    <table>
+      <thead><tr><th style="width:34%">项目</th><th style="width:22%">改之前</th><th>改之后</th></tr></thead>
+      <tbody>
+      <tr>
+        <td><b>悬浮层实际高度</b></td>
+        <td class="num">≈ 116vp（标题 + 分段 + 平台）</td>
+        <td class="num">≈ 76vp（只有标题）</td>
+      </tr>
+      <tr>
+        <td><b>内容顶部留白</b></td>
+        <td class="num">topSafe + 74</td>
+        <td class="num">topSafe + 84</td>
+      </tr>
+      <tr>
+        <td><b>结果</b></td>
+        <td><b style="color:#c2334a">重叠约 42vp</b>，正好是分段 + 平台两行</td>
+        <td><b style="color:#0a8f52">留 8vp 间隙</b>，两段互不相干</td>
+      </tr>
+      <tr>
+        <td><b>标题层渐变遮罩</b></td>
+        <td class="num">bottom: 34</td>
+        <td class="num">bottom: 16</td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="stage">
+    <h2>顺带修的两处</h2>
+    <p class="sub">同一个根因带出来的次生问题</p>
+    <ul class="rules">
+      <li><b>加载 / 空态贴顶</b>：筛选带占了顶部一块，原来的「正在加载」「这里还没有内容」会挤在筛选带下面贴着，
+          现在包一层 <span class="num">layoutWeight(1) + justifyContent(Center)</span>，在剩余区域里居中。</li>
+      <li><b>遮罩压暗筛选带</b>：标题层的渐变原来往下铺到 34vp，收窄到 16 之后只盖标题，
+          下面那排平台胶囊不再蒙一层灰。</li>
+      <li><b>筛选带常驻而不是跟着滚</b>：切平台、切分类不用先滑回顶部；
+          同时它和列表是两个独立的布局格，物理上不可能再互相穿过去。</li>
+    </ul>
+  </div>
+
+  <div class="stage">
+    <h2>自检加了 3 条，改回去会直接 FAIL</h2>
+    <ul class="rules">
+      <li><b>标题层里不许出现</b> <span class="num">this.segment(</span> 或 <span class="num">Chip({</span>：筛选一旦塞回悬浮层，重叠就回来了。</li>
+      <li><b>内容顶部留白必须 ≥ 80</b>：低于这个数，标题层（大标题 + 副标题）会盖住第一行。</li>
+      <li><b>标题层遮罩的 bottom 必须 ≤ 20</b>：铺得太深会把下方筛选带压暗。</li>
+    </ul>
+  </div>
+
+  <footer>
+    验证：BUILD SUCCESSFUL · verify-app success · verifiedPassed = True · com.yinzhan.music / 1 / 1.0<br>
+    自检：31 项 —— PASS 29 / WARN 2 / FAIL 0（两条 WARN 是既有的冗余广播，与本次无关）<br>
+    改的文件：<code>ui/pages/DiscoverPage.ets</code>（header 拆分出 filters、内容区留白、空态居中）、<code>scripts/selfcheck.py</code>（AC 组 +3 条）
+  </footer>
+
+</div>
+</body>
+</html>

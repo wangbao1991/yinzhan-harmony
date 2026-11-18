@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>音栈 · 底栏第二个位置：搜索 → 发现</title>
+<style>
+  :root{
+    --ink:#12151c; --ink2:#4a505e; --ink3:#7c8494;
+    --line:#e6e9f0; --brand:#2d6cff; --brand2:#7aa2ff;
+    --bg:#f5f7fb; --card:#ffffff;
+    --ok:#0a8f52; --bad:#c2334a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:44px 24px 64px;background:
+      radial-gradient(1200px 520px at 18% -10%, #e8eeff 0%, rgba(232,238,255,0) 62%),
+      radial-gradient(900px 420px at 92% 4%, #f3e9ff 0%, rgba(243,233,255,0) 58%),
+      var(--bg);
+    color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;letter-spacing:.14em;
+    color:var(--brand);background:#e9efff;border:1px solid #d8e2ff;padding:6px 12px;border-radius:999px;font-weight:600}
+  h1{font-size:34px;line-height:1.24;margin:18px 0 10px;letter-spacing:-.4px}
+  h1 em{font-style:normal;background:linear-gradient(100deg,#2d6cff,#8b5cf6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{font-size:15.2px;line-height:1.85;color:var(--ink2);max-width:790px}
+  .lead b{color:var(--ink)}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:30px 0 6px}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 10px 26px -18px rgba(16,24,40,.22)}
+  .box .k{font-size:11.5px;letter-spacing:.1em;color:var(--ink3);font-weight:700}
+  .box h3{margin:8px 0 8px;font-size:15.4px}
+  .box p{margin:0;font-size:13.2px;line-height:1.75;color:var(--ink2)}
+  .box code,.stage code{background:#f1f4fb;border:1px solid #e2e8f6;border-radius:5px;padding:1px 5px;font-size:11.8px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#33405c}
+
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px 24px 22px;margin-top:22px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 18px 44px -30px rgba(16,24,40,.3)}
+  .stage h2{font-size:17.5px;margin:0 0 4px}
+  .stage .sub{font-size:13px;color:var(--ink3);margin:0 0 18px}
+
+  /* 底栏对照 */
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-top:6px}
+  .case{text-align:center}
+  .case .tag{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.06em;color:var(--ink3);
+    margin-bottom:10px;padding:4px 10px;border-radius:999px;background:#f2f4f9;border:1px solid var(--line)}
+  .case.before .tag{color:var(--bad);background:#fdf0f2;border-color:#f8dfe3}
+  .case.after .tag{color:var(--ok);background:#effaf4;border-color:#d8f0e3}
+
+  .screen{position:relative;border-radius:22px;border:1px solid #e3e7f0;background:
+      linear-gradient(180deg,#ffffff 0%,#ffffff 62%,#f7f9fd 100%);
+      padding:14px 12px 12px;overflow:hidden;box-shadow:0 10px 30px -22px rgba(16,24,40,.45);
+      height:214px;display:flex;flex-direction:column}
+  .ghost{height:30px;border-radius:9px;background:#eef2fa;margin:0 4px 8px}
+  .ghost.s{width:64%;background:#f2f5fb}
+  .ghost.xs{width:44%;background:#f4f7fc}
+
+  .bar{margin-top:auto;border-radius:26px;background:rgba(255,255,255,.78);
+    border:1px solid rgba(0,0,0,.07);box-shadow:0 10px 24px -14px rgba(28,42,80,.45);
+    display:flex;padding:7px 6px;backdrop-filter:blur(10px)}
+  .t{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:3px 0;color:#8f96a5;
+    font-size:9.5px;letter-spacing:.02em}
+  .t svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .t.on{color:#2d6cff;font-weight:600}
+  .t.on svg{stroke:#2d6cff}
+  .t .dot{position:absolute;margin-top:-6px;width:22px;height:22px;border-radius:50%;
+    border:2px dashed #ff5d73;opacity:0}
+  .t.mark{position:relative}
+  .t.mark::after{content:"";position:absolute;inset:-6px -8px;border:1.6px dashed #ff5d73;border-radius:14px}
+  .hint{font-size:12.4px;line-height:1.6;color:var(--ink2);margin-top:10px;min-height:38px}
+  .hint b{color:var(--ink)}
+
+  /* 入口地图 */
+  table{width:100%;border-collapse:collapse;margin-top:6px;font-size:13.2px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11.5px;letter-spacing:.08em;color:var(--ink3);font-weight:700;text-transform:uppercase}
+  td b{color:var(--ink)}
+  td .old{color:var(--bad)}
+  td .new{color:var(--ok)}
+  tr:last-child td{border-bottom:none}
+
+  ul.rules{list-style:none;padding:0;margin:12px 0 0}
+  ul.rules li{position:relative;padding:9px 0 9px 26px;font-size:13.2px;line-height:1.7;color:var(--ink2);
+    border-bottom:1px dashed #eef1f7}
+  ul.rules li:last-child{border-bottom:none}
+  ul.rules li::before{content:"";position:absolute;left:6px;top:17px;width:7px;height:7px;border-radius:50%;
+    background:var(--brand);box-shadow:0 0 0 3px #e7efff}
+  ul.rules li b{color:var(--ink)}
+
+  footer{margin-top:34px;font-size:12.2px;color:var(--ink3);line-height:1.9}
+  footer code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  @media (max-width:760px){
+    .grid{grid-template-columns:1fr}
+    .pair{grid-template-columns:1fr}
+    h1{font-size:26px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <span class="eyebrow">导航结构 · 一次换位</span>
+  <h1>底栏第二个位置：<em>搜索 → 发现</em></h1>
+  <p class="lead">
+    圈出来的那个位置原本是搜索。搜索是<b>一次性动作</b>（搜完就走），却占了一个常驻位；
+    而榜单和推荐歌单是<b>每天都要看</b>的内容，反而埋在首页「排行榜 · 更多」里点两层才到。
+    把两者对调：底栏变成 <b>首页 / 发现 / 音乐库 / 设置</b>，搜索改成从首页搜索框、歌手页推上来的二级页。
+  </p>
+
+  <div class="grid">
+    <div class="box">
+      <div class="k">改动 1</div>
+      <h3>底栏对位</h3>
+      <p>第二格换成「发现」，图标用罗盘。四个位置数量不变，其它三个不动，用户不用重新学。</p>
+    </div>
+    <div class="box">
+      <div class="k">改动 2</div>
+      <h3>搜索下沉成二级页</h3>
+      <p>首页搜索框、歌手页点歌手名都走 <code>push('search')</code>；关键词随参数一起进页面，不再靠广播传词。</p>
+    </div>
+    <div class="box">
+      <div class="k">改动 3</div>
+      <h3>发现页转常驻</h3>
+      <p>以前每次进都是新实例，现在常年挂在内存里，所以要订阅「默认发现平台」的变更，否则设置页改完不生效。</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>底栏对照</h2>
+    <p class="sub">只有第二个位置变了，其余三格原样保留</p>
+    <div class="pair">
+
+      <div class="case before">
+        <span class="tag">改之前</span>
+        <div class="screen">
+          <div class="ghost"></div>
+          <div class="ghost s"></div>
+          <div class="ghost xs"></div>
+          <div class="bar">
+            <div class="t">
+              <svg viewBox="0 0 24 24"><path d="M4 10.6 12 4l8 6.6V20a1 1 0 0 1-1 1h-4.6v-6H9.6v6H5a1 1 0 0 1-1-1z"/></svg>
+              <span>首页</span>
+            </div>
+            <div class="t on mark">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.2"/><path d="M15.6 15.6 20 20"/></svg>
+              <span>搜索</span>
+            </div>
+            <div class="t">
+              <svg viewBox="0 0 24 24"><path d="M9 18V6l9-2v12"/><circle cx="6.6" cy="18" r="2.4"/><circle cx="15.6" cy="16" r="2.4"/></svg>
+              <span>音乐库</span>
+            </div>
+            <div class="t">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.6v2.2M12 18.2v2.2M20.4 12h-2.2M5.8 12H3.6M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6"/></svg>
+              <span>设置</span>
+            </div>
+          </div>
+        </div>
+        <div class="hint">搜索占着常驻位，发现页只能从首页卡片下面的「更多」进去。</div>
+      </div>
+
+      <div class="case after">
+        <span class="tag">改之后</span>
+        <div class="screen">
+          <div class="ghost"></div>
+          <div class="ghost s"></div>
+          <div class="ghost xs"></div>
+          <div class="bar">
+            <div class="t">
+              <svg viewBox="0 0 24 24"><path d="M4 10.6 12 4l8 6.6V20a1 1 0 0 1-1 1h-4.6v-6H9.6v6H5a1 1 0 0 1-1-1z"/></svg>
+              <span>首页</span>
+            </div>
+            <div class="t on mark">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M15.2 8.8 13.4 13.4 8.8 15.2l1.8-4.6z"/></svg>
+              <span>发现</span>
+            </div>
+            <div class="t">
+              <svg viewBox="0 0 24 24"><path d="M9 18V6l9-2v12"/><circle cx="6.6" cy="18" r="2.4"/><circle cx="15.6" cy="16" r="2.4"/></svg>
+              <span>音乐库</span>
+            </div>
+            <div class="t">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.6v2.2M12 18.2v2.2M20.4 12h-2.2M5.8 12H3.6M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6"/></svg>
+              <span>设置</span>
+            </div>
+          </div>
+        </div>
+        <div class="hint">发现页成为一级入口，切 Tab 即退出（没有返回键）；搜索退到二级页。</div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>入口地图：搜索并没有消失</h2>
+    <p class="sub">只是从「占位」变成「随用随开」，三个入口都指向同一个二级页</p>
+    <table>
+      <thead>
+      <tr><th style="width:24%">入口</th><th style="width:36%">改之前</th><th>改之后</th></tr>
+      </thead>
+      <tbody>
+      <tr>
+        <td><b>底栏第二个位置</b></td>
+        <td class="old">搜索页（一级页，常驻）</td>
+        <td class="new">发现页（一级页，常驻）</td>
+      </tr>
+      <tr>
+        <td><b>首页搜索框</b></td>
+        <td class="old">切 Tab 到搜索页，关键词靠 <code>pendingSearch</code> 广播补一次</td>
+        <td class="new">push 搜索二级页，关键词随 <code>SearchParam</code> 一起进来，进页面直接出结果</td>
+      </tr>
+      <tr>
+        <td><b>歌手页 · 点歌手名</b></td>
+        <td class="old"><b>死键</b>：<code>openSearch()</code> 一直在调，但 pageMap 从来没注册 <code>search</code></td>
+        <td class="new">接上同一个二级页，顺带修好这个从没通过过的入口</td>
+      </tr>
+      <tr>
+        <td><b>首页「排行榜 · 更多」</b></td>
+        <td class="old">push 一份带返回键的发现页，和底栏进去的是两套外壳</td>
+        <td class="new">直接切到发现 Tab，同一份页面，只有一种长相</td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="stage">
+    <h2>为什么搜索可以让位</h2>
+    <p class="sub">按使用频次排座，而不是按功能数量</p>
+    <ul class="rules">
+      <li><b>搜索是脉冲式的</b>：想起一首歌才去搜，搜完就离开。它不需要「一直在那儿」。</li>
+      <li><b>发现是每天的固定动作</b>：榜单和推荐歌单每天都在变，用户一天可能点好几次。</li>
+      <li><b>入口没减少</b>：首页顶部搜索框一直都在，点一下就是搜索页，路径没变长。</li>
+      <li><b>底栏数量不变</b>：还是四个位置，只是把最不常驻的那个换出去，避免加第五个把胶囊撑满。</li>
+    </ul>
+  </div>
+
+  <div class="stage">
+    <h2>自检怎么守住这次换位</h2>
+    <p class="sub">新增 AC 组，6 条规则；改坏了会直接 FAIL，不靠人眼</p>
+    <ul class="rules">
+      <li>底栏标签序列必须正好是 <b>首页 / 发现 / 音乐库 / 设置</b>，发现不在第二格就报错。</li>
+      <li><code>tabContent</code> 里必须有 <code>DiscoverPage()</code>，且<b>不许</b>再出现 <code>SearchPage()</code>（防止又变回搜索）。</li>
+      <li><code>pageMap</code> 必须注册 <code>search</code>，首页搜索框必须接到 <code>App.openSearch()</code>。</li>
+      <li>全工程不许再出现 <code>pendingSearch</code> 广播 —— 关键词应该随页面参数走。</li>
+      <li>发现页不许有返回键（<code>chevron_left</code>）、不许套回 <code>NavDestination</code>。</li>
+      <li>发现页必须订阅 <code>discoverPlatform</code>；首页「更多」不许再 <code>push('discover')</code>。</li>
+    </ul>
+  </div>
+
+  <footer>
+    验证：BUILD SUCCESSFUL · verify-app success · verifiedPassed = True · com.yinzhan.music / 1 / 1.0<br>
+    自检：31 项 —— PASS 29 / WARN 2 / FAIL 0（两条 WARN 是既有的冗余广播，与本次无关）<br>
+    产物：音栈-v1.0-signed.hap · 音栈-v1.0-unsigned.hap · 音栈-v1.0-HAP.zip · 音栈-v1.0-源码工程-含重建环境.zip
+  </footer>
+
+</div>
+</body>
+</html>

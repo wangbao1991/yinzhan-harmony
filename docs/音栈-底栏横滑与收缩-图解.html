@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>音栈 · 底栏：横滑切页 / 指示器跟手 / 滚动收缩</title>
+<style>
+  :root{
+    --ink:#12151c; --ink2:#4a505e; --ink3:#7c8494;
+    --line:#e6e9f0; --brand:#2d6cff; --bg:#f5f7fb; --card:#fff;
+    --ok:#0a8f52; --bad:#c2334a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:44px 24px 64px;background:
+      radial-gradient(1200px 520px at 18% -10%, #e8eeff 0%, rgba(232,238,255,0) 62%),
+      radial-gradient(900px 420px at 92% 4%, #f3e9ff 0%, rgba(243,233,255,0) 58%),
+      var(--bg);
+    color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;letter-spacing:.14em;
+    color:var(--brand);background:#e9efff;border:1px solid #d8e2ff;padding:6px 12px;border-radius:999px;font-weight:600}
+  h1{font-size:33px;line-height:1.26;margin:18px 0 10px;letter-spacing:-.4px}
+  h1 em{font-style:normal;background:linear-gradient(100deg,#2d6cff,#8b5cf6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{font-size:15.2px;line-height:1.85;color:var(--ink2);max-width:840px}
+  .lead b{color:var(--ink)}
+
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;margin-top:24px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 18px 44px -30px rgba(16,24,40,.3)}
+  .stage h2{font-size:17.5px;margin:0 0 4px}
+  .stage .sub{font-size:13px;color:var(--ink3);margin:0 0 20px}
+
+  .tri{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px}
+  .case{text-align:center}
+  .tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;margin-bottom:9px;
+    padding:4px 9px;border-radius:999px;color:#4a505e;background:#f1f4fb;border:1px solid #e4e9f4}
+  .tag b{color:var(--brand)}
+
+  .phone{border:1px solid #e1e6ef;border-radius:16px;overflow:hidden;background:#fff;position:relative;
+    box-shadow:0 14px 34px -26px rgba(16,24,40,.5);text-align:left;height:300px}
+  .status{height:20px;background:#f7f9fd;display:flex;align-items:center;justify-content:space-between;
+    padding:0 10px;font-size:7px;color:#8a92a3;border-bottom:1px solid #eef1f7}
+
+  .rail{position:absolute;left:0;top:20px;bottom:0;width:100%;overflow:hidden;background:#fbfcff}
+  .pane{position:absolute;top:0;left:0;width:100%;height:100%;padding:9px;transition:none}
+  .pane.b{left:100%}
+  .pane.c{left:200%}
+  .t{font-size:10px;font-weight:800;letter-spacing:-.2px;margin-bottom:7px}
+  .blk{height:26px;border-radius:7px;background:#f0f3fa;margin-bottom:5px}
+  .blk.s{width:72%}
+  .blk.xs{width:48%}
+
+  .dock{position:absolute;left:9px;right:9px;bottom:8px;height:50px}
+  .bar{position:absolute;left:0;right:0;bottom:0;height:46px;border-radius:22px;
+    background:rgba(255,255,255,.86);border:1px solid rgba(0,0,0,.07);
+    box-shadow:0 8px 20px -12px rgba(28,42,80,.5);backdrop-filter:blur(10px)}
+  .bar.narrow{left:16%;right:16%;height:36px;border-radius:18px}
+  .pill{position:absolute;top:5px;height:36px;width:33.33%;border-radius:18px;background:rgba(45,108,255,.12)}
+  .bar.narrow .pill{top:4px;height:28px;border-radius:14px}
+  .icons{position:absolute;inset:0;display:flex}
+  .ic{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+  .ic .d{width:15px;height:15px;border-radius:5px;background:#b6bfd2}
+  .ic.on .d{background:#2d6cff}
+  .ic span{font-size:6.6px;color:#8d95a6}
+  .ic.on span{color:#2d6cff;font-weight:600}
+  .bar.narrow .ic span{display:none}
+  .bar.narrow .ic .d{width:12px;height:12px;border-radius:4px}
+
+  .ghost{position:absolute;left:0;right:0;bottom:0;height:46px;border-radius:22px;
+    border:1px dashed #c9d2e2;pointer-events:none}
+
+  .note{font-size:12px;line-height:1.62;color:var(--ink2);margin-top:11px;text-align:left}
+  .note b{color:var(--ink)}
+  .note code{font-size:11px}
+
+  table{width:100%;border-collapse:collapse;margin-top:4px;font-size:13px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11.6px;letter-spacing:.06em;color:var(--ink3);font-weight:700;background:#fafbfe}
+  tr:last-child td{border-bottom:none}
+  td b{font-weight:700}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.2px;color:#33405c;
+    background:#f1f4fb;border:1px solid #e2e8f6;border-radius:5px;padding:1px 5px}
+
+  ul.chk{list-style:none;padding:0;margin:8px 0 0}
+  ul.chk li{font-size:13px;line-height:1.6;color:var(--ink2);padding:7px 0 7px 24px;position:relative;
+    border-bottom:1px dashed #eef1f7}
+  ul.chk li:last-child{border-bottom:none}
+  ul.chk li::before{content:"";position:absolute;left:2px;top:13px;width:12px;height:7px;
+    border-left:2px solid var(--ok);border-bottom:2px solid var(--ok);transform:rotate(-45deg)}
+  ul.chk li b{color:var(--ink)}
+
+  .warn{border-left:3px solid #e0a12a;background:#fffaf0;border-radius:0 10px 10px 0;
+    padding:12px 14px;margin-top:12px;font-size:12.8px;line-height:1.7;color:#6b5122}
+  .warn b{color:#4a360f}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <span class="eyebrow">音栈 · 外壳</span>
+  <h1>底栏：<em>横滑切页</em> · 指示器跟手 · 滚动收成图标条</h1>
+  <p class="lead">
+    参考视频里那套「滑动 + 自动缩放 + 自动伸展」，拆开是三条独立机制：页面容器换成能跟手拖拽的 Swiper；
+    底栏加一个会横向移动的选中胶囊，位置取「当前页 + 拖动比例」；滚动进度直接驱动底栏的高度、宽度和文字透明度。
+    三条都挂在同一个连续量上，所以是变形，不是切换。
+  </p>
+
+  <div class="stage">
+    <h2>三种形态</h2>
+    <p class="sub">同一套组件，只是三个连续量取了不同的值</p>
+    <div class="tri">
+
+      <div class="case">
+        <span class="tag">展开 · <b>progress 0</b></span>
+        <div class="phone">
+          <div class="status"><span>12:39</span><span>89</span></div>
+          <div class="rail">
+            <div class="pane">
+              <div class="t">首页</div>
+              <div class="blk"></div><div class="blk s"></div><div class="blk xs"></div>
+              <div class="blk"></div><div class="blk s"></div>
+            </div>
+          </div>
+          <div class="dock">
+            <div class="bar">
+              <div class="pill" style="left:0"></div>
+              <div class="icons">
+                <div class="ic on"><div class="d"></div><span>首页</span></div>
+                <div class="ic"><div class="d"></div><span>发现</span></div>
+                <div class="ic"><div class="d"></div><span>设置</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note">宽 100%、高 62，图标 22 + 文字 9.5。</p>
+      </div>
+
+      <div class="case">
+        <span class="tag">横滑中 · <b>swipe 0.5</b></span>
+        <div class="phone">
+          <div class="status"><span>12:39</span><span>89</span></div>
+          <div class="rail">
+            <div class="pane" style="left:-52%">
+              <div class="t">首页</div>
+              <div class="blk"></div><div class="blk s"></div><div class="blk xs"></div>
+              <div class="blk"></div>
+            </div>
+            <div class="pane" style="left:48%;background:#fbfcff">
+              <div class="t">发现</div>
+              <div class="blk"></div><div class="blk xs"></div><div class="blk s"></div>
+              <div class="blk"></div>
+            </div>
+          </div>
+          <div class="dock">
+            <div class="bar">
+              <div class="pill" style="left:16.6%"></div>
+              <div class="icons">
+                <div class="ic"><div class="d"></div><span>首页</span></div>
+                <div class="ic on"><div class="d"></div><span>发现</span></div>
+                <div class="ic"><div class="d"></div><span>设置</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note">页面跟着手指走，胶囊停在<b>两格中间</b>；指针过半，高亮就换到下一格。</p>
+      </div>
+
+      <div class="case">
+        <span class="tag">收起 · <b>progress 1</b></span>
+        <div class="phone">
+          <div class="status"><span>12:39</span><span>89</span></div>
+          <div class="rail">
+            <div class="pane">
+              <div class="t">首页</div>
+              <div class="blk"></div><div class="blk s"></div><div class="blk xs"></div>
+              <div class="blk"></div><div class="blk s"></div><div class="blk"></div>
+              <div class="blk s"></div><div class="blk xs"></div>
+            </div>
+          </div>
+          <div class="dock">
+            <div class="bar narrow">
+              <div class="pill" style="left:0"></div>
+              <div class="icons">
+                <div class="ic on"><div class="d"></div><span>首页</span></div>
+                <div class="ic"><div class="d"></div><span>发现</span></div>
+                <div class="ic"><div class="d"></div><span>设置</span></div>
+              </div>
+            </div>
+            <div class="ghost"></div>
+          </div>
+        </div>
+        <p class="note">高 62→46、宽 100%→70%、图标 22→19，文字高度压到 0。虚线圈是展开时的位置。</p>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>三个动作分别由什么驱动</h2>
+    <p class="sub">关键在于三个量都是连续的，没有一个是「开关」</p>
+    <table>
+      <thead>
+        <tr><th style="width:16%">动作</th><th style="width:26%">实现</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>滑动切页</b></td>
+          <td><code>Swiper</code> + <code>SwiperController</code></td>
+          <td>三个一级页从 <code>Stack</code> + <code>visibility</code> 搬进 Swiper，横滑由它接管；点底栏走 <code>changeIndex()</code>，和手势同一条过场</td>
+        </tr>
+        <tr>
+          <td><b>指示器跟手</b></td>
+          <td><code>onContentDidScroll</code> → <code>tabSwipe</code></td>
+          <td>回调给出「当前页 + 偏移比例」，写进 AppStorage；胶囊宽度固定 1/3，<code>position.x</code> 直接取这个百分比</td>
+        </tr>
+        <tr>
+          <td><b>滚动缩放</b></td>
+          <td><code>tabBarProgress</code> → 尺寸 + 文字</td>
+          <td>原来只 <code>opacity + translateY</code> 淡出，栏体和文字一起消失；现在三者挂同一个 0~1 值上连续变形</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="stage">
+    <h2>改的时候踩到的两个坑</h2>
+    <p class="sub">都不在「动画怎么写」，在「谁跟着谁动」</p>
+    <div class="warn">
+      <b>一、底栏变矮会把迷你播放条一起拽下去。</b>
+      悬浮层是一个贴底的 Column：播放条在上、标签栏在下。标签栏高度从 62 掉到 46，整列就矮了 16，
+      底部对齐意味着顶部下移——播放条跟着上下晃。解法是给标签栏外面套一个固定 62 高的壳、底对齐，
+      收起时只有标签栏自己在壳里下沉，播放条完全不动。
+    </div>
+    <div class="warn">
+      <b>二、Swiper 的 loop 必须关掉。</b>
+      开着 loop 时，在设置页继续左滑会绕回首页，页面是滑过去的，但底栏指示器要从第 3 格瞬移回第 1 格，
+      用户会以为自己点错了。一级页是固定的三段，没有循环的必要。
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>验证</h2>
+    <p class="sub">编译、签名、自检、反向注入</p>
+    <ul class="chk">
+      <li><b>BUILD SUCCESSFUL</b> · <b>verify-app success</b> · <b>verifiedPassed = True</b> · com.yinzhan.music / 1 / 1.0，3.56 MB</li>
+      <li>自检 <b>33 项：PASS 31 / WARN 2 / FAIL 0</b>（两条 WARN 是既有的冗余广播）</li>
+      <li>新增 AE 组 8 条：容器必须是 Swiper、不许用 visibility 切页、必须接 <code>onContentDidScroll</code>、必须广播 <code>tabSwipe</code>、必须 <code>loop(false)</code>、必须绑 <code>index(this.tab)</code>、点底栏必须走 <code>changeIndex</code>、底栏必须有 <code>pillX/barHeight/barWidth</code> 且不许整体淡出</li>
+      <li>反向注入：改回 Stack + visibility、开 loop、删 changeIndex、去掉 onContentDidScroll、改名 pillX、加回 <code>opacity(1 - progress)</code> —— 六次全部立即报 FAIL</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

@@ -143,7 +143,7 @@ export struct FavoriteSheetsPage {
         LoadingProgress().width(16).height(16).color(this.p().primary)
       } else {
         SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-          .fontSize(15)
+          .fontSize(FONT.body)
           .fontColor([this.syncVisual().clean ? this.p().primary : this.p().text3])
       }
       Text(this.syncLabel())
@@ -154,7 +154,7 @@ export struct FavoriteSheetsPage {
         .layoutWeight(1)
       if (!this.syncVisual().syncing) {
         SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(13)
+          .fontSize(FONT.callout)
           .fontColor([this.p().text3])
       }
     }
@@ -458,7 +458,7 @@ export struct FavoriteSheetsPage {
                         Stack() {
                           if (this.isSelected(Library.sheetKey(sheet))) {
                             SymbolGlyph($r('sys.symbol.checkmark'))
-                              .fontSize(13)
+                              .fontSize(FONT.callout)
                               .fontColor(['#FF191713'])
                           }
                         }

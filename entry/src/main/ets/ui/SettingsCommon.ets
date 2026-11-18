@@ -41,7 +41,7 @@ export struct SettingArrowRow {
           .constraintSize({ maxWidth: 150 })
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
-      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(13).fontColor([this.p().text3])
+      SymbolGlyph($r('sys.symbol.chevron_right')).fontSize(FONT.callout).fontColor([this.p().text3])
     }
     .width('100%')
     .height(52)

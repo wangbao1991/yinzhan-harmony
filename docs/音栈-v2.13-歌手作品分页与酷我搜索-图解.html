@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音栈 v2.13 · 歌手作品只有 30/50 首 & 酷我搜不出歌手 · 诊断与修复</title>
+<style>
+  :root{
+    --bg:#f5f7f6; --card:#ffffff; --txt:#1c2b28; --txt2:#4a5f5a; --txt3:#7c8f8a;
+    --line:#dce6e2; --teal:#0f766e; --teal2:#14b8a6; --tealbg:#e6f5f1;
+    --red:#b91c1c; --redbg:#fdecec; --amber:#a16207; --amberbg:#fef6e0;
+    --code:#10241f; --codecard:#0e1f1b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.75;font-size:15px}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 20px 60px}
+  header{background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;border-radius:18px;
+    padding:30px 32px;margin-bottom:24px;box-shadow:0 8px 26px rgba(15,118,110,.22)}
+  header .tag{display:inline-block;background:rgba(255,255,255,.2);border-radius:20px;
+    padding:3px 12px;font-size:12px;letter-spacing:1px;margin-bottom:12px}
+  header h1{margin:0 0 8px;font-size:25px;line-height:1.4}
+  header p{margin:0;opacity:.92;font-size:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:22px 24px;margin-bottom:18px;box-shadow:0 2px 10px rgba(20,50,45,.04)}
+  h2{margin:0 0 14px;font-size:19px;color:var(--teal);display:flex;align-items:center;gap:9px}
+  h2 .n{background:var(--teal);color:#fff;width:26px;height:26px;border-radius:8px;
+    display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex:none}
+  h3{font-size:15px;margin:18px 0 8px;color:var(--txt)}
+  p{margin:8px 0}
+  ul{margin:8px 0;padding-left:22px}
+  li{margin:5px 0}
+  b{color:var(--teal)}
+  code{background:var(--tealbg);color:#0b5c55;padding:1px 6px;border-radius:5px;
+    font-family:"SFMono-Regular",Consolas,monospace;font-size:12.5px;word-break:break-all}
+  pre{background:var(--codecard);color:#d6f2ea;border-radius:10px;padding:15px 17px;
+    overflow-x:auto;font-size:12.5px;line-height:1.65;margin:12px 0;
+    font-family:"SFMono-Regular",Consolas,monospace;white-space:pre}
+  pre .k{color:#7dd3c0}pre .s{color:#f0c987}pre .c{color:#6d9188}pre .n{color:#e2a9f0}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--tealbg);color:#0b5c55;font-weight:600}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .box{border-left:4px solid var(--teal);background:var(--tealbg);border-radius:0 10px 10px 0;
+    padding:12px 16px;margin:12px 0;min-width:0}
+  .box.bad{border-color:var(--red);background:var(--redbg)}
+  .box.warn{border-color:var(--amber);background:var(--amberbg)}
+  .box.bad b{color:var(--red)}.box.warn b{color:var(--amber)}
+  .tag2{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:6px;
+    background:var(--teal);color:#fff;margin-right:6px}
+  .tag2.r{background:var(--red)}.tag2.a{background:var(--amber)}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:14px 0;font-size:13px}
+  .node{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:7px 12px}
+  .node.bad{border-color:#f3b4b4;background:var(--redbg);color:var(--red)}
+  .node.ok{border-color:#8fd6c4;background:var(--tealbg);color:#0b5c55}
+  .arw{color:var(--txt3);font-weight:700}
+  .q{background:#eef3f1;border-radius:10px;padding:12px 16px;margin:10px 0;
+    color:var(--txt2);font-style:normal;min-width:0}
+  .small{font-size:12.5px;color:var(--txt3)}
+  footer{text-align:center;color:var(--txt3);font-size:12.5px;margin-top:26px}
+  @media(max-width:600px){.wrap{padding:16px 12px 40px}header{padding:22px 20px}
+    header h1{font-size:20px}.card{padding:16px}table{font-size:12px}th,td{padding:7px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="tag">音栈 · v2.13 · versionCode 24</div>
+  <h1>歌手作品只有 30 / 50 首 & 酷我搜不出歌手</h1>
+  <p>真机反馈排查 · 根因定位 · 数据层修复 · 接口实测验证</p>
+</header>
+
+<div class="card">
+  <h2><span class="n">Q</span>你的两个问题</h2>
+  <div class="q">「为什么搜歌手点进歌手详情要么都是三十首歌曲要么是五十首歌曲，就一个歌手不可能只有点歌曲，是只能获取到 30 或者 50 首吗？」</div>
+  <div class="q">「还有酷我还是不能搜出来。」</div>
+  <p><b>结论先给：不是接口只能给 30 / 50 首，是代码只取了一页。</b>两个问题都跟上一轮（v2.12）我留下的错误判断直接相关，本版一并纠正。</p>
+</div>
+
+<div class="card">
+  <h2><span class="n">1</span>30 / 50 首从哪来</h2>
+  <p>歌手详情页 <code>ArtistPage.fetchSongs()</code> 的逻辑是「先调平台歌手作品接口，拿不到再退化成按歌手名搜索再筛」。而 <code>PlatformApi.artistSongs()</code> 此前<b>只实现了网易云一个平台</b>，其余四个平台直接返回空数组：</p>
+  <div class="flow">
+    <span class="node">点歌手卡片</span><span class="arw">→</span>
+    <span class="node">artistSongs()</span><span class="arw">→</span>
+    <span class="node bad">仅 wy 有实现 / 其余返回空</span>
+  </div>
+  <ul>
+    <li><b>50 首</b>＝网易云走老接口 <code>/api/artist/{id}</code> 的 <code>hotSongs</code>，这个字段<b>固定 50 首热门</b>。实测同一位歌手 <code>musicSize=407</code>，接口不是只有 50 首。</li>
+    <li><b>30 首</b>＝QQ / 酷狗 / 酷我 / 咪咕 返回空 → 退化到「按歌手名搜<b>第 1 页</b>再筛」，各平台每页 <code>rn=30</code> / <code>limit=30</code> / <code>pagesize=30</code>，筛完往往还更少。</li>
+  </ul>
+  <div class="box bad"><b>关键</b>：30 和 50 都是代码里写死的「热门 50」和「搜索第一页 30」，不是任何平台的上限。把这两个数当成接口能力，是我上一轮没查链路就直接下结论的结果。</div>
+
+  <h3>实测各平台该歌手的真实作品量（本次逐个接口请求）</h3>
+  <table>
+    <tr><th>平台</th><th>按歌手 ID 取作品的接口</th><th class="num">实测总数</th><th>分页参数</th></tr>
+    <tr><td>网易云</td><td><code>/api/v1/artist/songs</code></td><td class="num">407</td><td><code>offset / limit=100</code></td></tr>
+    <tr><td>QQ 音乐</td><td><code>musicu.fcg · GetSingerSongList</code></td><td class="num">417</td><td><code>begin / num=100</code></td></tr>
+    <tr><td>酷狗音乐</td><td><code>/api/v3/singer/song</code></td><td class="num">680</td><td><code>page / pagesize=100</code></td></tr>
+    <tr><td>酷我音乐</td><td><code>r.s?artistid=</code></td><td class="num">472</td><td><code>pn 页码 / rn=30</code></td></tr>
+    <tr><td>咪咕音乐</td><td>无公开作品接口</td><td class="num">—</td><td>保持按名搜索兜底</td></tr>
+  </table>
+  <p class="small">注：QQ 老接口 <code>fcg_v8_singer_track_cp.fcg</code> 现已全部 404 下线，必须用统一接口 <code>musicu.fcg</code>；工程里原本已有该接口的其它用途，本版沿用同一请求格式。</p>
+</div>
+
+<div class="card">
+  <h2><span class="n">2</span>酷我为什么搜不出歌手</h2>
+  <p><code>searchArtists()</code> 里 wy / tx / kg / mg 都有分支，<b>唯独 kw 直接返回空</b>。上一轮我在那里留了一句注释：</p>
+  <div class="box bad">「酷我公开接口返回单引号非标准 JSON，JSON.parse 会失败，强行解析容易把搜索页整块带崩」——<b>这个判断是错的。</b></div>
+  <p>工程里早就有 <code>parseKwItems()</code>，用「按 <code>{"AARTIST"</code> 切块 + 逐字段正则」稳定解析酷我 <code>r.s</code> 的伪 JSON，从不依赖 <code>JSON.parse</code>。实测 <code>ft=artist</code> 返回 20 位歌手，字段齐全：</p>
+  <table>
+    <tr><th>字段</th><th>含义</th><th>实测样例（搜「陶喆」）</th></tr>
+    <tr><td><code>ARTIST</code></td><td>歌手名</td><td>陶喆</td></tr>
+    <tr><td><code>ARTISTID</code></td><td>歌手 ID</td><td>451</td></tr>
+    <tr><td><code>PICPATH</code></td><td>头像相对路径</td><td>240/s4s55/31/1316361792.jpg</td></tr>
+    <tr><td><code>BASEPICPATH</code></td><td>头像前缀（响应头部）</td><td>http://img1.kuwo.cn/star/starheads/</td></tr>
+    <tr><td><code>SONGNUM</code></td><td>作品数</td><td>502</td></tr>
+  </table>
+  <p>头像拼成 <code>BASEPICPATH + PICPATH</code> 再升 https，实测 <b>HTTP 200、image/jpeg、10KB</b> 可达。另有一个易踩的差别：<b>歌手搜索（<code>ft=artist</code>）是单引号伪 JSON，作品查询（<code>r.s?artistid=</code>）是标准双引号 JSON</b>，两者必须分开解析——本版分别用 <code>parseKwArtists()</code> 和现成的 <code>parseKwItems()</code>。</p>
+</div>
+
+<div class="card">
+  <h2><span class="n">3</span>v2.13 改了什么</h2>
+  <table>
+    <tr><th>文件</th><th>改动</th></tr>
+    <tr><td><code>PlatformApi.ets</code></td><td><code>artistSongs(artist, page)</code> 改为返回 <code>PagedSongs</code>，按平台分发到四个真实作品接口（wy v1 / tx musicu / kg singer-song / kw artistid），每个都带页数与总数；新增 <code>kwSearchArtists()</code> + <code>parseKwArtists()</code> 打通酷我歌手搜索；新增 <code>txSongFromMusicu()</code> 转换 QQ 新字段；删掉上一轮那段错误注释</td></tr>
+    <tr><td><code>ArtistPage.ets</code></td><td>新增 <code>page / hasMore / loadingMore / total</code> 状态与 <code>loadMore()</code>，<code>List.onReachEnd</code> 滑到底自动翻页、按 <code>source+id</code> 去重追加；副标题显示<b>真实总数</b>并提示「上滑加载更多」；兜底改为并发取 3 页按名搜索</td></tr>
+    <tr><td>版本四处</td><td><code>24 / 2.13</code> 同步，含 <code>build_release.sh</code>、<code>selfcheck.py</code>、<code>AGENTS.md</code></td></tr>
+  </table>
+  <p>核心代码形态：</p>
+  <pre><span class="k">async</span> artistSongs(artist: ArtistInfo, page: number = <span class="n">1</span>): Promise&lt;PagedSongs&gt; {
+  <span class="k">if</span> (artist.platform === <span class="s">'wy'</span>) <span class="k">return await</span> <span class="k">this</span>.wyArtistSongs(artist.id, p);
+  <span class="k">if</span> (artist.platform === <span class="s">'tx'</span>) <span class="k">return await</span> <span class="k">this</span>.txArtistSongs(artist.id, p);
+  <span class="k">if</span> (artist.platform === <span class="s">'kg'</span>) <span class="k">return await</span> <span class="k">this</span>.kgArtistSongs(artist.id, p);
+  <span class="k">if</span> (artist.platform === <span class="s">'kw'</span>) <span class="k">return await</span> <span class="k">this</span>.kwArtistSongs(artist.id, p);
+  <span class="k">return</span> emptyPaged(p);  <span class="c">// 咪咕等无公开接口，交还详情页兜底</span>
+}</pre>
+  <div class="box warn"><b>踩到并规避的坑</b>：网易云 v1 连续请求会触发 <code>-462</code> 风控验证，代码带固定 Cookie 并在失败时<b>回退到老接口 hotSongs 50 首</b>；酷我 <code>rn</code> 调大反而返回更少（<code>rn=100</code> 只给 4 条），固定 30；酷狗歌手接口歌名在 <code>filename</code>（「陶喆 - 爱我还是他」），复用已有 <code>kgSong()</code> 的拆分逻辑。</div>
+</div>
+
+<div class="card">
+  <h2><span class="n">4</span>验证：构建 + 包内反查 + 接口实测</h2>
+  <ul>
+    <li>干净构建 <b>BUILD SUCCESSFUL</b>（33 tasks）→ <code>sign-app</code> → <code>verify-app success</code> → <code>Digest verify result: true</code></li>
+    <li>版本双向核对 <b>24 / 2.13</b>；工程自检 51 项 <b>PASS 49 / WARN 2 / FAIL 0</b></li>
+    <li>包内 <code>modules.abc</code> 反查：<code>parseKwArtists / txSongFromMusicu / kwSearchArtists / wyArtistSongs / txArtistSongs / kgArtistSongs / kwArtistSongs / v1/artist/songs / GetSingerSongList / v3/singer/song / onReachEnd / loadMore</code> 全部命中；<code>geometryTransition / PLAY_STATS / lightSense / parseKwItems</code> 保留</li>
+    <li><b>端到端复刻解析</b>（用真实接口响应跑同款逻辑）：酷我歌手 <b>20 位</b>且头像 URL 正确、酷我作品首页 <b>22 首 / TOTAL 472</b>、网易云 <b>100 / 407</b>、QQ <b>100 / 417</b>、酷狗 <b>100 / 680</b></li>
+  </ul>
+  <p class="small">改动前快照 <code>yinzhan-v2.12-pre-artist-songs-20261107-181052.zip</code>（SHA256 <code>fcc54279…</code>）；新 HAP SHA256 <code>aac9a008…</code>。</p>
+</div>
+
+<div class="card">
+  <h2><span class="n">5</span>装上后怎么确认</h2>
+  <p>覆盖安装 → <b>设置 → 关于</b> 确认显示 <b>v2.13</b> → 搜索「陶喆」切到<b>歌手</b>分类：</p>
+  <ul>
+    <li><b>酷我</b>：现在应能列出歌手卡片（含头像、作品数），不再显示「没有找到歌手」</li>
+    <li>点进任一歌手的详情：副标题显示<b>真实总数</b>（如网易云 407 首作品），首屏约 100 首，<b>列表滑到底自动加载下一页</b>，可一直翻到几百首</li>
+  </ul>
+  <div class="box"><b>还差什么</b>：沙箱无 HarmonyOS 真机，实际翻页手感、各平台接口在真机网络下的稳定性未实测；网易云 v1 触发风控时会自动退回 50 首热门；咪咕无公开作品接口，仍按名搜索兜底（数量有限）。这些均由对应平台接口与设备环境决定，已逐条标注。</div>
+  <p class="small">其余限制照旧：v1.9 基线 ZIP 不在沙箱；当前为 OpenHarmony 公共签名，正式 HarmonyOS NEXT 真机仍需 AGC 证书；API 26 包最低只能装 API 26+ 设备。</p>
+</div>
+
+<footer>音栈 v2.13 · 诊断与修复说明 · 根目录只保留最新 HAP，历史包与图解均在 archive/</footer>
+</div>
+</body>
+</html>

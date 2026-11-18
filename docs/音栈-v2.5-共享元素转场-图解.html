@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音栈 v2.5 · 播放栏一镜到底（共享元素转场）</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px 60px;
+    background: #F6F7FB; color: #1B1D23;
+    font-family: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 25px; font-weight: 700; margin: 0 0 8px; letter-spacing: -.3px; }
+  .sub { font-size: 13.5px; color: #6B7280; line-height: 1.8; margin: 0 0 24px; }
+  .card {
+    background: #fff; border-radius: 16px; padding: 22px 24px 20px;
+    box-shadow: 0 1px 2px rgba(20,26,40,.04), 0 8px 24px rgba(20,26,40,.05);
+    margin-bottom: 16px; border: 1px solid #EDF0F5;
+  }
+  h2 { font-size: 16px; font-weight: 650; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px; }
+  .tag.live { background: #EAF0FF; color: #3A5BD9; }
+  .tag.warn { background: #FFF0E8; color: #C0433E; }
+  .tag.ok   { background: #E6F7F2; color: #138A70; }
+  .desc { font-size: 13px; line-height: 1.85; color: #5A6069; margin: 0 0 14px; }
+  .desc b { color: #1B1D23; font-weight: 650; }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px;
+    background: #F2F4F9; border-radius: 4px; padding: 1.5px 5px; color: #3B4A63;
+    word-break: break-all;
+  }
+  pre {
+    background: #1F2430; color: #DCE4F5; border-radius: 10px; padding: 14px 16px;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px;
+    line-height: 1.75; overflow-x: auto; margin: 0 0 12px;
+  }
+  pre .k { color: #8FB8FF; } pre .s { color: #A8E6C8; } pre .c { color: #7C879B; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 560px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #EEF1F6; vertical-align: top; line-height: 1.65; }
+  th { color: #6B7280; font-weight: 600; font-size: 11.5px; background: #FAFBFD; }
+  td b { color: #1B1D23; }
+  .pick { background: #F2F7FF; }
+  .pick td:first-child { border-left: 3px solid #4C6FFF; }
+
+  /* ── 对比预览 ── */
+  .duo { display: flex; gap: 18px; flex-wrap: wrap; }
+  .phonebox { flex: 1 1 250px; min-width: 230px; }
+  .plabel { font-size: 12px; font-weight: 650; margin: 0 0 8px; display: flex; align-items: center; gap: 7px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.old { background: #C0433E; } .dot.new { background: #138A70; }
+  .phone {
+    position: relative; width: 100%; height: 360px; border-radius: 22px; overflow: hidden;
+    background: linear-gradient(165deg,#232838,#2E3444 50%,#3A4152);
+    border: 1px solid rgba(255,255,255,.10);
+  }
+  .fake { padding: 16px 14px 0; opacity: .42; }
+  .frow { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+  .fart { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg,#5B6478,#3D4454); flex: none; }
+  .fline { flex: 1; }
+  .f1 { height: 7px; width: 58%; border-radius: 4px; background: rgba(255,255,255,.38); margin-bottom: 5px; }
+  .f2 { height: 6px; width: 36%; border-radius: 4px; background: rgba(255,255,255,.18); }
+  .bar {
+    position: absolute; left: 12px; right: 12px; bottom: 12px; height: 56px;
+    border-radius: 18px; z-index: 2; overflow: hidden;
+    background: rgba(248,249,252,.90); border: .8px solid rgba(255,255,255,.55);
+    box-shadow: 0 8px 20px rgba(0,0,0,.24);
+    display: flex; align-items: center; gap: 9px; padding: 0 9px;
+  }
+  .bart { width: 34px; height: 34px; border-radius: 9px; flex: none;
+    background: linear-gradient(135deg,#7C93FF,#335CFF); }
+  .bartxt { flex: 1; min-width: 0; }
+  .b1 { font-size: 11.5px; font-weight: 650; color: #1B1D23; white-space: nowrap; overflow: hidden; }
+  .b2 { font-size: 9.5px; color: #8A909C; white-space: nowrap; overflow: hidden; margin-top: 2px; }
+  .bplay { width: 20px; height: 20px; flex: none; border-radius: 50%; background: #335CFF; }
+  /* 旧版：独立整页从底部滑入 */
+  .oldpage {
+    position: absolute; left: 0; right: 0; top: 0; bottom: 0; z-index: 3;
+    background: linear-gradient(180deg,#3B4260,#171A24);
+    transform: translateY(100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  }
+  .oldart { width: 108px; height: 108px; border-radius: 16px; background: linear-gradient(135deg,#7C93FF,#335CFF); }
+  .oldtt { font-size: 13px; color: #EFF3FF; font-weight: 600; }
+  .oldsub { font-size: 10.5px; color: #9AA6C4; }
+  /* 新版：同一块几何放大成整屏 */
+  .newpage {
+    position: absolute; z-index: 3; overflow: hidden;
+    background: linear-gradient(180deg,#3B4260,#171A24);
+    border: .8px solid rgba(255,255,255,.22);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  }
+  .hint { font-size: 11.5px; color: #8A909C; line-height: 1.7; margin: 10px 0 0; }
+  .ctrl { display: flex; align-items: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+  .ctrl input[type=range] { flex: 1 1 180px; -webkit-appearance: none; height: 4px; border-radius: 3px; background: #E4E8F0; outline: none; }
+  .ctrl input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%; background: #4C6FFF; cursor: pointer; }
+  button {
+    border: 0; border-radius: 9px; padding: 8px 16px; font-size: 12px; font-weight: 600;
+    background: #4C6FFF; color: #fff; cursor: pointer; font-family: inherit;
+  }
+  button.ghost { background: #EEF1F8; color: #3B4A63; }
+  ul { margin: 0 0 12px; padding-left: 20px; font-size: 12.5px; line-height: 1.9; color: #5A6069; }
+  ul b { color: #1B1D23; }
+  .foot { font-size: 11.5px; color: #9399A4; text-align: center; margin-top: 22px; line-height: 1.8; }
+  @media (max-width: 560px) {
+    body { padding: 26px 14px 40px; }
+    .card { padding: 18px 16px 16px; }
+    h1 { font-size: 21px; }
+    /* 窄屏表格强制收缩到视口内换行，不靠横向滚动 */
+    table { min-width: 0; table-layout: fixed; }
+    th, td { padding: 8px 6px; word-break: break-word; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>播放栏上滑展开 · 改成官方一镜到底</h1>
+  <p class="sub">
+    v2.5（16 / 2.5）· 本轮唯一主题：把「迷你播放条 → 全屏播放页」从系统模态滑入，
+    改为 HarmonyOS 官方的 <b>共享元素转场（geometryTransition）</b>，并修掉跟手位移被属性动画拖慢的问题。
+    下面是官方方式的判定依据、实际改动、可播放的对比预览和完整验证结果。
+  </p>
+
+  <div class="card">
+    <h2>一、官方有四种做法，哪一种符合我们 <span class="tag live">判定</span></h2>
+    <p class="desc">
+      依据官方《共享元素转场（一镜到底）》与《一镜到底动效开发实践》的分类，
+      我们这个场景是「<b>底部一条播放胶囊 → 整屏播放页</b>」：不发生路由跳转、前后是同一首歌的界面、
+      播放状态都在 <code>Player</code> 单例里而不是组件实例里，所以<b>创建新节点开销小</b>。
+    </p>
+    <div class="tablewrap">
+    <table>
+      <tr><th style="width:31%">官方方式</th><th style="width:34%">适用场景</th><th>本工程是否合适</th></tr>
+      <tr class="pick"><td><b>② geometryTransition 共享元素转场</b><br>两组件绑同一 id + 转场放进 <code>animateTo</code></td>
+        <td>创建新节点开销小；「图标 / 搜索框 / 列表展开」</td>
+        <td><b>✅ 采用。</b>对应官方「图标展开：geometryTransition 接口 + 显示动画」，系统自动插值位置与尺寸</td></tr>
+      <tr><td>① 不新建容器、直接变化原容器</td><td>转场开销极小的简单展开 / 收起</td>
+        <td>❌ 这正是底栏 <code>stage()</code> 逐帧手算的老路，没有系统插值，容易糊成两团半透明影</td></tr>
+      <tr><td>③ NodeController 跨容器迁移节点</td><td>新建对象开销大：视频 / 直播转全屏</td>
+        <td>❌ 状态不在节点里，无需迁移；且要自算前后布局位移缩放，官方列为坑最多的方式</td></tr>
+      <tr><td>④ Navigation 自定义动画转场</td><td>页面路由跳转（NavDestination 之间）</td>
+        <td>❌ 播放页是全局浮层，二级页也能打开，不是 NavDestination，套不上</td></tr>
+    </table>
+    </div>
+    <p class="desc" style="margin-top:14px">
+      官方对方式 ② 的原话：<b>「系统将调整绑定的两个组件的宽高及位置至相同值，并切换二者的透明度」</b>；
+      《Navigation 转场动画》还强调 <b>「配置了共享元素转场的页面，同时需要关闭系统默认的转场动画，
+      否则默认动画会与共享元素动画叠加，导致效果异常」</b>。这两句直接决定了下面的改法。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>二、原来为什么不丝滑 <span class="tag warn">根因</span></h2>
+    <ul>
+      <li><b>没有几何连续性：</b>原实现是 <code>bindContentCover + ModalTransition.DEFAULT</code>，
+        系统把整页从底部滑上来，迷你播放条<b>完全不参与形变</b>，只是被盖住 —— 本质是「另一张页面盖上来」，不是一镜到底。</li>
+      <li><b>状态切换没进动画闭包：</b><code>playerShow = true</code> 是直接赋值，系统没有机会接管插值。</li>
+      <li><b>跟手被缓动追：</b>播放页 <code>.translate({y: dragY}).animation({duration:160})</code> 把属性动画
+        挂在每帧变化的位移上。工程自己在 <code>TabBar.onSwipe</code> 的注释里记过同一个坑：
+        「属性动画的时长在渲染时读一次……实际表现是原地卡住、然后硬跳」。手指和内容之间像隔了一层橡皮筋。</li>
+      <li><b>松手有跳变：</b>旧代码在 <code>onActionEnd</code> 里先无条件把 <code>dragY</code> 清零再关闭，
+        于是「先弹回原位、再开始收拢」。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>三、按官方范式落地 <span class="tag ok">改动</span></h2>
+    <p class="desc">集中在 <code>pages/Index.ets</code> 与 <code>ui/pages/PlayerPage.ets</code>，四处要点：</p>
+<pre><span class="c">// 1) 同一组件树内互斥出现，绑定同一个 id（不再用独立模态窗口）</span>
+<span class="k">if</span> (!this.playerShow) {
+  Column() { MiniPlayer() }
+    .geometryTransition(this.playerGeomId)
+    .transition(TransitionEffect.OPACITY.animation({ duration: 180 }))
+}
+<span class="k">if</span> (this.playerShow) {
+  Stack() { this.playerCover() }
+    .geometryTransition(this.playerGeomId)
+    .transition(TransitionEffect.OPACITY.animation({ duration: 180 }))
+}
+
+<span class="c">// 2) 状态切换放进 animateTo 闭包；3) onFinish 清空 id 防误触发</span>
+<span class="k">private</span> setPlayerShow(show: boolean): void {
+  animateTo({
+    curve: curves.interpolatingSpring(<span class="s">0, 1, 342, 38</span>),  <span class="c">// 官方「图标展开」弹簧曲线</span>
+    onFinish: (): void => { this.playerGeomId = <span class="s">''</span>; }
+  }, (): void => {
+    this.playerGeomId = PLAYER_SHARED_ID;   <span class="c">// 下次触发前设回</span>
+    this.playerShow = show;
+  });
+}
+
+<span class="c">// 4) 跟手零延迟：translate 上不再挂 .animation()</span>
+.translate({ y: this.dragY })
+<span class="c">// 松手：达标交给转场且不清零；未达标才用 animateTo 显式回弹</span></pre>
+    <p class="desc">
+      <code>bindContentCover</code> 整段移除 —— 它是独立模态窗口，跨窗口拿不到「组件内隐式共享元素」
+      的几何连续性，而且默认转场会与共享元素动画叠加。改成同树 <code>if/else</code> 后就是官方示例 1 的标准范式。
+      打开 / 关闭（点击、下拉、返回键）三处入口统一走 <code>setPlayerShow()</code>，曲线一致。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>四、对比预览 <span class="tag live">可播放</span></h2>
+    <p class="desc">拖滑块或点「播一遍」：左边是旧的整页滑入，右边是一镜到底的几何插值。看播放条本身有没有「长成」整屏。</p>
+    <div class="duo">
+      <div class="phonebox">
+        <p class="plabel"><span class="dot old"></span>改造前 · 系统模态滑入</p>
+        <div class="phone">
+          <div class="fake">
+            <div class="frow"><div class="fart"></div><div class="fline"><div class="f1"></div><div class="f2"></div></div></div>
+            <div class="frow"><div class="fart"></div><div class="fline"><div class="f1"></div><div class="f2"></div></div></div>
+            <div class="frow"><div class="fart"></div><div class="fline"><div class="f1"></div><div class="f2"></div></div></div>
+          </div>
+          <div class="bar" id="oldbar">
+            <div class="bart"></div><div class="bartxt"><div class="b1">当前播放</div><div class="b2">音栈 · 演示</div></div><div class="bplay"></div>
+          </div>
+          <div class="oldpage" id="oldpage">
+            <div class="oldart"></div><div class="oldtt">全屏播放页</div><div class="oldsub">整页从底部滑入，播放条原地不动</div>
+          </div>
+        </div>
+        <p class="hint">播放条被一整张新页面盖住；两者没有位置 / 尺寸上的承接关系。</p>
+      </div>
+      <div class="phonebox">
+        <p class="plabel"><span class="dot new"></span>改造后 · 一镜到底</p>
+        <div class="phone" id="newphone">
+          <div class="fake" id="newfake">
+            <div class="frow"><div class="fart"></div><div class="fline"><div class="f1"></div><div class="f2"></div></div></div>
+            <div class="frow"><div class="fart"></div><div class="fline"><div class="f1"></div><div class="f2"></div></div></div>
+            <div class="frow"><div class="fart"></div><div class="fline"><div class="f1"></div><div class="f2"></div></div></div>
+          </div>
+          <div class="bar" id="newbar">
+            <div class="bart"></div><div class="bartxt"><div class="b1">当前播放</div><div class="b2">音栈 · 演示</div></div><div class="bplay"></div>
+          </div>
+          <div class="newpage" id="newpage">
+            <div class="oldart"></div><div class="oldtt">全屏播放页</div><div class="oldsub">同一元素放大成整屏</div>
+          </div>
+        </div>
+        <p class="hint">同一块几何从 56 高胶囊连续插值到整屏；内容用 OPACITY 淡入淡出交接。</p>
+      </div>
+    </div>
+    <div class="ctrl">
+      <input type="range" id="slider" min="0" max="100" value="0">
+      <button id="play">播一遍</button>
+      <button class="ghost" id="reset">归位</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>五、验证结果 <span class="tag ok">全绿</span></h2>
+    <div class="tablewrap">
+    <table>
+      <tr><th style="width:36%">验收项</th><th>结果</th></tr>
+      <tr><td>干净 release 构建</td><td><b>BUILD SUCCESSFUL in 11 s 334 ms</b>（CompileArkTS 无错误）</td></tr>
+      <tr><td>签名 / 验签</td><td><code>sign-app success</code> → <code>verify-app success</code>，<code>Digest verify result: true</code></td></tr>
+      <tr><td>版本双向核对</td><td>pack.info ↔ module.json 均为 <b>16 / 2.5</b>，bundleName <code>com.yinzhan.music</code></td></tr>
+      <tr><td>签名后 profile</td><td><code>verifiedPassed = True</code></td></tr>
+      <tr><td>静态自检</td><td><b>51 项：PASS 49 / WARN 2 / FAIL 0</b>，与改动前基线一致（2 项历史 WARN 未动）</td></tr>
+      <tr><td>包内符号反查</td><td><code>geometryTransition</code>、<code>yinzhan_player_shared</code>、<code>interpolatingSpring</code>、<code>2.5</code> 命中；<code>bindContentCover</code>、<code>ModalTransition</code> <b>已从产物消失</b>；<code>PLAY_STATS</code> 保留</td></tr>
+      <tr><td>改动前隔离快照</td><td><code>archive/snapshots/yinzhan-v2.4-pre-shared-element-transition-20261107-132752.zip</code><br>SHA256 <code>e634779e76fe5a02b349b13ff3abab2500dac9ee594dce8ed26c61054bbffa94</code></td></tr>
+    </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>六、边界与真机确认 <span class="tag warn">须知</span></h2>
+    <ul>
+      <li><b>本沙箱没有真机 / 模拟器</b>，动效手感无法实测。弹簧参数 <code>(0, 1, 342, 38)</code> 是官方
+        「图标展开」案例的原值，装到真机后若觉得偏慢或偏弹，只需改 <code>setPlayerShow()</code> 里这一处。</li>
+      <li><b>底部栏滚动收起不在本次范围。</b>它属于官方「共享容器转场」，且必须 1:1 跟手
+        （由 <code>tabBarProgress</code> 逐帧驱动），改成补间动画反而会不跟手，故 <code>Shell.ets</code> 原样保留。</li>
+      <li><b>v1.9 基线 ZIP 不在本沙箱</b>，SOP 第 6 节的基线 SHA256 复核这轮无法执行；本轮回滚锚点是上面那份 v2.4 隔离快照。</li>
+      <li>当前签名用 OpenHarmony 公共材料，适用于设备 / 模拟器与产物验收；HarmonyOS NEXT 正式真机仍需 AGC 证书与 profile。</li>
+    </ul>
+    <p class="desc" style="margin-bottom:0">
+      <b>装好后到「设置 → 关于」看到 v2.5 即为覆盖成功。</b>
+      若界面没变化，多半是同版本覆盖被系统跳过，请先确认版本号。
+    </p>
+  </div>
+
+  <p class="foot">音栈 v2.5 · 共享元素转场（一镜到底）· 本轮只此一个主题、只出一个包</p>
+</div>
+
+<script>
+(function () {
+  var slider = document.getElementById('slider');
+  var oldpage = document.getElementById('oldpage');
+  var newpage = document.getElementById('newpage');
+  var newbar = document.getElementById('newbar');
+  var newfake = document.getElementById('newfake');
+  var newphone = document.getElementById('newphone');
+  var oldbar = document.getElementById('oldbar');
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function ease(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function render(p) {
+    var t = ease(Math.max(0, Math.min(1, p)));
+
+    // 旧版：整页 translateY(100%) -> 0；播放条保持不动，被盖住
+    oldpage.style.transform = 'translateY(' + ((1 - t) * 100).toFixed(2) + '%)';
+    oldbar.style.opacity = '1';
+
+    // 新版：同一块几何 left/right/bottom/height/圆角 连续插值到整屏
+    var W = newphone.clientWidth, H = newphone.clientHeight;
+    var left = lerp(12, 0, t), right = lerp(12, 0, t);
+    var bottom = lerp(12, 0, t);
+    var height = lerp(56, H, t);
+    var radius = lerp(18, 0, t);
+    newpage.style.left = left + 'px';
+    newpage.style.right = right + 'px';
+    newpage.style.bottom = bottom + 'px';
+    newpage.style.top = 'auto';
+    newpage.style.height = height + 'px';
+    newpage.style.borderRadius = radius + 'px';
+    newpage.style.opacity = String(lerp(0, 1, Math.min(1, t * 1.6)));
+    // 条内文字/按钮逐步淡出，整页内容淡入，模拟 OPACITY 交接
+    newbar.style.opacity = String(Math.max(0, 1 - t * 2.2));
+    newfake.style.opacity = String(0.42 * (1 - t));
+  }
+
+  slider.addEventListener('input', function () { render(slider.value / 100); });
+
+  document.getElementById('play').addEventListener('click', function () {
+    var t0 = performance.now(), dur = 900;
+    function step(now) {
+      var x = (now - t0) / dur;
+      if (x <= 1) { render(x); slider.value = Math.round(x * 100); requestAnimationFrame(step); }
+      else if (x <= 1.35) { render(1); slider.value = 100; requestAnimationFrame(step); }
+      else if (x <= 2.35) { var y = (x - 1.35); render(1 - y); slider.value = Math.round((1 - y) * 100); requestAnimationFrame(step); }
+      else { render(0); slider.value = 0; }
+    }
+    requestAnimationFrame(step);
+  });
+
+  document.getElementById('reset').addEventListener('click', function () { render(0); slider.value = 0; });
+
+  window.addEventListener('resize', function () { render(slider.value / 100); });
+  render(0);
+})();
+</script>
+</body>
+</html>

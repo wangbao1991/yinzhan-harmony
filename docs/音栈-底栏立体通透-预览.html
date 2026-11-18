@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>音栈 · 底栏立体通透改造</title>
+<style>
+  :root{
+    --ink:#16181D; --ink2:#6E7480; --ink3:#A7ACB6;
+    --pri:#335CFF;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  .intro{max-width:1050px;margin:16px 0 0;padding:16px 18px;border-radius:14px;
+         background:rgba(255,255,255,.72);border:1px solid #E1E6EF}
+  .intro p{font-size:12.8px;line-height:1.95;color:#5A6272}
+  .intro p+p{margin-top:9px}
+  .intro b{color:#2A3140;font-weight:600}
+  .intro code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;
+              background:#EEF2F8;padding:1px 5px;border-radius:4px;color:#3A4A6B}
+
+  body{
+    font-family:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+    background:#EEF1F6; color:var(--ink); padding:34px 30px 40px;
+  }
+  h1{font-size:21px;font-weight:600;letter-spacing:.2px}
+  .sub{font-size:12.5px;color:#7C8494;margin-top:7px;line-height:1.8}
+  .wrap{display:flex;gap:34px;margin-top:26px;align-items:flex-start}
+  .col{flex:1;min-width:0}
+  .cap{font-size:12px;color:#8B93A2;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .cap b{font-weight:600;color:#3A4150;font-size:12.5px}
+  .badge{font-size:10.5px;padding:2px 7px;border-radius:5px;background:#DDE3EC;color:#6B7383}
+  .badge.good{background:#DCE9FF;color:#2A4DBD}
+
+  /* 屏幕 */
+  .phone{
+    position:relative;width:392px;height:430px;border-radius:26px;overflow:hidden;
+    background:linear-gradient(180deg,#F7F8FC 0%,#F2F4FA 48%,#E4EDFB 100%);border:1px solid #DDE2EA;
+  }
+  /* 氛围光：模拟应用里的三团 glow */
+  .glow{position:absolute;border-radius:50%;filter:blur(64px);pointer-events:none}
+  .g1{width:430px;height:430px;left:-26%;top:-14%;background:rgba(96,138,255,.20)}
+  .g2{width:340px;height:340px;left:60%;top:6%;background:rgba(140,160,255,.16)}
+  .g3{width:400px;height:340px;left:6%;top:76%;background:rgba(108,168,230,.34)}
+
+  .content{position:absolute;inset:0;padding:26px 20px}
+  .content h2{font-size:26px;font-weight:600;letter-spacing:.5px}
+  .line{height:10px;border-radius:5px;background:rgba(22,24,29,.10);margin-top:14px}
+  .line.s{width:62%}
+  .line.m{width:80%}
+  .card{margin-top:18px;height:88px;border-radius:18px;background:rgba(255,255,255,.62);
+        border:1px solid rgba(255,255,255,.85)}
+
+  /* 底栏容器 */
+  .dock{position:absolute;left:14px;right:14px;bottom:18px}
+  .player{position:relative;height:58px;display:flex;align-items:center;gap:10px;padding:0 6px 0 8px}
+  .player .art{width:36px;height:36px;border-radius:10px;flex:none;
+    background:linear-gradient(150deg,#7E8FA8,#3E4A5C)}
+  .player .meta{flex:1;min-width:0}
+  .player .nm{font-size:13.5px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .player .sg{font-size:10.5px;color:var(--ink3);margin-top:3px}
+  .player .tns{display:flex;align-items:center;gap:0}
+  .player .tns i{width:28px;height:28px;display:flex;align-items:center;justify-content:center}
+  .player .tns svg{display:block}
+
+  .tabbar{position:relative;margin-top:12px;height:62px;display:flex;align-items:center;padding:0 4px}
+  .tab{flex:1;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+  .tab .ic{font-size:22px;line-height:1}
+  .tab .lb{font-size:9.5px;color:var(--ink3)}
+  .tab.on .lb{color:var(--pri);font-weight:500}
+  .pill{position:absolute;top:8px;height:46px;border-radius:23px;left:calc(66.666% + 2px);width:calc(33.333% - 6px)}
+
+  /* icons */
+  .ic svg{display:block;margin:0 auto}
+
+  /* ───── 改前：单色平涂 ───── */
+  .old .player{
+    border-radius:20px;
+    background:rgba(255,255,255,.60);
+    border:.8px solid rgba(0,0,0,.216);
+    box-shadow:0 8px 18px rgba(51,92,255,.16);
+    backdrop-filter:blur(22px) saturate(1.5);
+  }
+  .old .tabbar{
+    border-radius:31px;
+    background:rgba(255,255,255,.60);
+    border:.8px solid rgba(0,0,0,.216);
+    box-shadow:0 8px 18px rgba(51,92,255,.16);
+    backdrop-filter:blur(22px) saturate(1.5);
+  }
+  .old .pill{background:rgba(51,92,255,.12)}
+
+  /* ───── 改后：四段渐变 + 四边 + 底沿高光 ───── */
+  .new .player{
+    border-radius:22px;
+    background:linear-gradient(145deg,rgba(255,255,255,.58) 0%,rgba(255,255,255,.26) 38%,rgba(238,246,255,.30) 72%,rgba(200,224,248,.42) 100%);
+    border-top:1px solid rgba(255,255,255,.98);
+    border-right:.9px solid rgba(255,255,255,.45);
+    border-bottom:1.4px solid rgba(255,255,255,1);
+    border-left:.9px solid rgba(255,255,255,.45);
+    box-shadow:0 12px 20px rgba(18,36,78,.14);
+    backdrop-filter:blur(24px) saturate(1.7);
+  }
+  .new .tabbar{
+    border-radius:31px;
+    background:linear-gradient(145deg,rgba(255,255,255,.58) 0%,rgba(255,255,255,.26) 38%,rgba(238,246,255,.30) 72%,rgba(200,224,248,.42) 100%);
+    border-top:1px solid rgba(255,255,255,.98);
+    border-right:.9px solid rgba(255,255,255,.45);
+    border-bottom:1.4px solid rgba(255,255,255,1);
+    border-left:.9px solid rgba(255,255,255,.45);
+    box-shadow:0 12px 20px rgba(18,36,78,.14);
+    backdrop-filter:blur(24px) saturate(1.7);
+  }
+  /* 底沿内高光 */
+  .new .player::after,.new .tabbar::after{
+    content:"";position:absolute;left:0;right:0;bottom:1.2px;height:1.8px;border-radius:1px;
+    background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.16) 14%,rgba(255,255,255,.92) 50%,rgba(255,255,255,.16) 86%,transparent 100%);
+    pointer-events:none;
+  }
+  /* 顶面受光 */
+  .new .player::before,.new .tabbar::before{
+    content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    background:linear-gradient(168deg,rgba(255,255,255,.22) 0%,rgba(255,255,255,.06) 26%,transparent 54%),linear-gradient(0deg,rgba(255,255,255,.46) 0%,rgba(255,255,255,.12) 12%,rgba(255,255,255,0) 26%);
+  }
+  .new .pill{
+    background:linear-gradient(145deg,rgba(51,92,255,.26) 0%,rgba(51,92,255,.12) 58%,rgba(51,92,255,.18) 100%);
+    border-top:1px solid rgba(255,255,255,.88);
+    border-right:.8px solid rgba(255,255,255,.40);
+    border-bottom:1px solid rgba(255,255,255,.55);
+    border-left:.8px solid rgba(255,255,255,.40);
+    box-shadow:0 3px 10px rgba(51,92,255,.18);
+  }
+
+  /* 收起态 */
+  .slim .player{
+    border-radius:26px;
+    background:linear-gradient(145deg,rgba(255,255,255,.58) 0%,rgba(255,255,255,.26) 38%,rgba(238,246,255,.30) 72%,rgba(200,224,248,.42) 100%);
+    border-top:1px solid rgba(255,255,255,.98);
+    border-right:.9px solid rgba(255,255,255,.45);
+    border-bottom:1.4px solid rgba(255,255,255,1);
+    border-left:.9px solid rgba(255,255,255,.45);
+    box-shadow:0 12px 20px rgba(18,36,78,.14);
+    backdrop-filter:blur(24px) saturate(1.7);
+    height:52px;padding:0 4px;gap:8px;
+  }
+  .slim .player::after{
+    content:"";position:absolute;left:0;right:0;bottom:1.2px;height:1.8px;border-radius:1px;
+    background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.16) 14%,rgba(255,255,255,.92) 50%,rgba(255,255,255,.16) 86%,transparent 100%);
+    pointer-events:none;
+  }
+  .fab{
+    width:44px;height:44px;border-radius:22px;flex:none;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(145deg,rgba(255,255,255,.22) 0%,rgba(255,255,255,.04) 45%,transparent 100%), var(--pri);
+    border-top:1px solid rgba(255,255,255,.34);
+    border-right:1px solid rgba(255,255,255,.10);
+    border-bottom:1px solid rgba(255,255,255,.10);
+    border-left:1px solid rgba(255,255,255,.28);
+    box-shadow:0 5px 12px rgba(51,92,255,.34);
+  }
+  .slim .art{width:36px;height:36px;border-radius:10px;flex:none;background:linear-gradient(150deg,#8E7FD8,#4A3E9C)}
+
+  .note{margin-top:26px;font-size:12.5px;color:#6F7787;line-height:1.95;
+        border-left:3px solid #C9D4E8;padding-left:13px;max-width:1180px}
+  .note b{color:#2F3646;font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>底栏两层：从「平涂磨砂」到「有厚度的玻璃」</h1>
+<p class="sub">
+  同一块背景（三团氛围光 + 一条卡片）下，只换栏体自身的画法。左边是现在真机上的样子，右边是这次改的。
+</p>
+
+<div class="intro">
+  <p><b>问题不在颜色深浅，在「每个像素都一样」。</b>
+     原来栏体是一层 <code>rgba(255,255,255,.60)</code> 加一圈 <code>0.8</code> 等宽同色描边。
+     它是均匀的——眼睛找不到任何厚度线索，于是读成「一块磨砂塑料板贴在页面上」，
+     和参考图那种「一块玻璃浮在页面上」差的就是这个。</p>
+  <p><b>玻璃的线索全来自「不均匀」</b>：左上受光更白、右下透出背景的冷色、下沿比上沿厚、影子落在主体下方十几像素处。
+     四件事缺一件，就会掉回平涂。所以这次改的不是调色，是把这四层补齐。</p>
+</div>
+
+<div class="wrap">
+  <div class="col">
+    <div class="cap"><b>改前</b><span class="badge">单色 rgba + 一圈同色描边</span></div>
+    <div class="phone old">
+      <div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div>
+      <div class="content">
+        <h2>设置</h2>
+        <div class="line m"></div><div class="line s"></div>
+        <div class="card"></div>
+      </div>
+      <div class="dock">
+        <div class="player">
+          <div class="art"></div>
+          <div class="meta"><div class="nm">二十二</div><div class="sg">网站</div></div>
+          <div class="tns">
+            <i><svg width="20" height="20" viewBox="0 0 24 24" fill="#16181D"><path d="M6 4l14 8-14 8z"/></svg></i>
+            <i><svg width="17" height="17" viewBox="0 0 24 24" fill="#6E7480"><path d="M5 5l10 7-10 7z"/><rect x="16.5" y="5" width="2.4" height="14" rx="1"/></svg></i>
+            <i><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6E7480" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></i>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="pill"></div>
+          <div class="tab">
+            <span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A7ACB6" stroke-width="1.9" stroke-linejoin="round"><path d="M4 11l8-7 8 7v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/></svg></span>
+            <span class="lb">首页</span>
+          </div>
+          <div class="tab">
+            <span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A7ACB6" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5l-2 5-5 2 2-5z" stroke-linejoin="round"/></svg></span>
+            <span class="lb">发现</span>
+          </div>
+          <div class="tab on">
+            <span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="#335CFF"><path d="M12 8.4a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6zm0-4.4a1.4 1.4 0 0 1 1.4 1.3l.1 1.1c.5.13.97.33 1.4.6l.85-.7a1.4 1.4 0 0 1 1.87.1l.02.02a1.4 1.4 0 0 1 .08 1.9l-.7.86c.26.43.46.9.6 1.4l1.1.1a1.4 1.4 0 0 1 1.24 1.4n-1.4 1.4a1.4 1.4 0 0 1-1.24 1.4l-1.1.1c-.14.5-.34.97-.6 1.4l.7.86a1.4 1.4 0 0 1-.08 1.9l-.02.02a1.4 1.4 0 0 1-1.87.1l-.85-.7c-.43.26-.9.46-1.4.6l-.1 1.1a1.4 1.4 0 0 1-1.4 1.24h-.02a1.4 1.4 0 0 1-1.4-1.24l-.1-1.1a5.6 5.6 0 0 1-1.4-.6l-.85.7a1.4 1.4 0 0 1-1.87-.1l-.02-.02a1.4 1.4 0 0 1-.08-1.9l.7-.86a5.6 5.6 0 0 1-.6-1.4l-1.1-.1A1.4 1.4 0 0 1 2 12v-.02a1.4 1.4 0 0 1 1.24-1.4l1.1-.1c.14-.5.34-.97.6-1.4l-.7-.86a1.4 1.4 0 0 1 .08-1.9l.02-.02a1.4 1.4 0 0 1 1.87-.1l.85.7c.43-.26.9-.46 1.4-.6l.1-1.1A1.4 1.4 0 0 1 12 4z"/></svg></span>
+            <span class="lb">设置</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="cap"><b>改后</b><span class="badge good">渐变表面 + 四边分描 + 底沿高光</span></div>
+    <div class="phone new">
+      <div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div>
+      <div class="content">
+        <h2>设置</h2>
+        <div class="line m"></div><div class="line s"></div>
+        <div class="card"></div>
+      </div>
+      <div class="dock">
+        <div class="player">
+          <div class="art"></div>
+          <div class="meta"><div class="nm">二十二</div><div class="sg">网站</div></div>
+          <div class="tns">
+            <i><svg width="20" height="20" viewBox="0 0 24 24" fill="#16181D"><path d="M6 4l14 8-14 8z"/></svg></i>
+            <i><svg width="17" height="17" viewBox="0 0 24 24" fill="#6E7480"><path d="M5 5l10 7-10 7z"/><rect x="16.5" y="5" width="2.4" height="14" rx="1"/></svg></i>
+            <i><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6E7480" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></i>
+          </div>
+        </div>
+        <div class="tabbar">
+          <div class="pill"></div>
+          <div class="tab">
+            <span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A7ACB6" stroke-width="1.9" stroke-linejoin="round"><path d="M4 11l8-7 8 7v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/></svg></span>
+            <span class="lb">首页</span>
+          </div>
+          <div class="tab">
+            <span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A7ACB6" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5l-2 5-5 2 2-5z" stroke-linejoin="round"/></svg></span>
+            <span class="lb">发现</span>
+          </div>
+          <div class="tab on">
+            <span class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="#335CFF"><path d="M12 8.4a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6zm0-4.4a1.4 1.4 0 0 1 1.4 1.3l.1 1.1c.5.13.97.33 1.4.6l.85-.7a1.4 1.4 0 0 1 1.87.1l.02.02a1.4 1.4 0 0 1 .08 1.9l-.7.86c.26.43.46.9.6 1.4l1.1.1a1.4 1.4 0 0 1 1.24 1.4n-1.4 1.4a1.4 1.4 0 0 1-1.24 1.4l-1.1.1c-.14.5-.34.97-.6 1.4l.7.86a1.4 1.4 0 0 1-.08 1.9l-.02.02a1.4 1.4 0 0 1-1.87.1l-.85-.7c-.43.26-.9.46-1.4.6l-.1 1.1a1.4 1.4 0 0 1-1.4 1.24h-.02a1.4 1.4 0 0 1-1.4-1.24l-.1-1.1a5.6 5.6 0 0 1-1.4-.6l-.85.7a1.4 1.4 0 0 1-1.87-.1l-.02-.02a1.4 1.4 0 0 1-.08-1.9l.7-.86a5.6 5.6 0 0 1-.6-1.4l-1.1-.1A1.4 1.4 0 0 1 2 12v-.02a1.4 1.4 0 0 1 1.24-1.4l1.1-.1c.14-.5.34-.97.6-1.4l-.7-.86a1.4 1.4 0 0 1 .08-1.9l.02-.02a1.4 1.4 0 0 1 1.87-.1l.85.7c.43-.26.9-.46 1.4-.6l.1-1.1A1.4 1.4 0 0 1 12 4z"/></svg></span>
+            <span class="lb">设置</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" style="margin-top:22px">
+  <div class="col">
+    <div class="cap"><b>收起态（改后）</b><span class="badge good">圆按钮 + 播放坞，同一条栏体</span></div>
+    <div class="phone new slim" style="height:250px">
+      <div class="glow g1"></div><div class="glow g2"></div><div class="glow g3"></div>
+      <div class="content">
+        <h2>设置</h2>
+        <div class="line m"></div><div class="line s"></div>
+      </div>
+      <div class="dock">
+        <div class="player">
+          <div class="fab">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M12 3.2L2.8 11l1.3 1.6L12 5.6l7.9 7L21.2 11z"/><path d="M5.6 12.4V20h5.1v-4.6h2.6V20h5.1v-7.6L12 6.9z"/></svg>
+          </div>
+          <div class="art"></div>
+          <div class="meta"><div class="nm">二十二</div><div class="sg">网站</div></div>
+          <div class="tns">
+            <i><svg width="20" height="20" viewBox="0 0 24 24" fill="#16181D"><path d="M6 4l14 8-14 8z"/></svg></i>
+            <i><svg width="17" height="17" viewBox="0 0 24 24" fill="#6E7480"><path d="M5 5l10 7-10 7z"/><rect x="16.5" y="5" width="2.4" height="14" rx="1"/></svg></i>
+            <i><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6E7480" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="cap"><b>六处改动</b></div>
+    <div class="note" style="margin-top:0">
+      <b>表面</b>　对角四段渐变，白 0.58 → 0.26 → 0.30 → 冷蓝 0.42<br>
+      <b>轮廓</b>　上 1.0 / 左右 0.9 / 下 1.4，<b>下沿最厚最亮</b><br>
+      <b>底带</b>　下 26% 一层聚光，往上渐隐（厚度长在这）<br>
+      <b>底沿</b>　1.4 高的内高光，中间实、两端虚<br>
+      <b>高度</b>　投影 offsetY 12、散开 20、冷蓝黑 14%<br>
+      <b>间距</b>　两层 8 → <b>12</b>，播放条左右各收 4（一窄一宽）<br>
+      <b>选中</b>　平涂 12% → 渐变 0.26/0.12/0.18 + 一圈亮边 + 3vp 短影
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

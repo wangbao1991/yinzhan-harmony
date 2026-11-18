@@ -660,7 +660,7 @@ export struct SearchPage {
   mfSourceChip(item: SourceItem) {
     Row({ space: 5 }) {
       Text('MF')
-        .fontSize(9)
+        .fontSize(FONT.micro)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.source === this.mfSourceKey(item) ? this.p().primary : '#FFFFFFFF')
         .backgroundColor(this.source === this.mfSourceKey(item) ? '#FFFFFFFF' : this.p().accent)
@@ -944,7 +944,7 @@ export struct SearchPage {
                 ForEach(this.versionsOf(song), (v: SongInfo, vi: number) => {
                   Row({ space: 8 }) {
                     Text(platformShort(v.source) + ' · ' + (v.quality.length > 0 ? v.quality : '标准'))
-                      .fontSize(13)
+                      .fontSize(FONT.callout)
                       .fontColor(this.p().text)
                       .layoutWeight(1)
                     Text(v.singer)

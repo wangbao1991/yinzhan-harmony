@@ -52,7 +52,6 @@ export default class EntryAbility extends UIAbility {
     this.isDark = mode === 2 ||
       (mode === 0 && this.context.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
     AppStorage.setOrCreate('isDark', this.isDark);
-    AppStorage.setOrCreate('themeMode', mode);
     console.info('[LX] EntryAbility onCreate, dark=' + this.isDark + ', mode=' + mode);
     // 文件管理器「选择打开方式」→ 冷启动：want.uri 带着 .js 文件进来
     ImportIntent.pushFromWant(want);

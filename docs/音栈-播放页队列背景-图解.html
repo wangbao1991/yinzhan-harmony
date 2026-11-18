@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>音栈 · 播放页队列为什么是黑底黑字</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#fff; --ink:#1c2130; --sub:#5b6478; --line:#e5e8f0;
+    --brand:#4a5bd6; --ok:#0f9d6e; --ok-soft:#e7f7f1; --red:#c0392b; --red-soft:#fdecea;
+    --dim:#8a93a6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:34px 20px 60px;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+  .wrap{max-width:1020px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 6px}
+  .lead{color:var(--sub);font-size:14px;margin:0 0 22px}
+  .hero{background:linear-gradient(120deg,#4a5bd6,#6b53d8);color:#fff;border-radius:16px;
+    padding:22px 26px;margin-bottom:24px;box-shadow:0 8px 24px rgba(74,91,214,.18)}
+  .hero b{font-size:18px;display:block;margin-bottom:6px}
+  .hero span{font-size:14px;opacity:.94}
+  h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--brand)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;font-size:13px}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f8f9fd;color:var(--sub);font-weight:600;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:600;white-space:nowrap}
+  code{background:#f1f3f9;padding:1px 5px;border-radius:4px;font-size:12px;color:#3a46a8}
+  .note{font-size:12.5px;color:var(--dim);margin:8px 0 0}
+  .stage{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:16px 0 6px}
+  .cap{font-size:12px;color:var(--sub);text-align:center;margin-bottom:8px}
+  .cap b{font-size:13px}
+  .phone{position:relative;height:430px;border-radius:20px;overflow:hidden;
+    background:
+      radial-gradient(90% 60% at 25% 30%, rgba(176,120,90,.55), transparent 62%),
+      radial-gradient(80% 55% at 70% 20%, rgba(70,80,110,.5), transparent 60%),
+      linear-gradient(165deg,#2a211c,#141014 65%,#0d0b0e);
+    box-shadow:0 10px 26px rgba(18,16,22,.22)}
+  .phone:after{content:"";position:absolute;inset:0;
+    background:linear-gradient(180deg,rgba(0,0,0,.35),rgba(0,0,0,.15) 40%,rgba(0,0,0,.55))}
+  .lyric{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;
+    justify-content:center;align-items:center;gap:9px;color:#fff;font-size:13px;opacity:.9;
+    text-shadow:0 1px 8px rgba(0,0,0,.6)}
+  .lyric .on{font-weight:700;font-size:15px}
+  .sheet{position:absolute;left:0;right:0;bottom:0;height:78%;z-index:2;
+    border-radius:18px 18px 0 0;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+
+  /* 改前：Sheet 透明 + 浅色主题的深灰字 */
+  .before .sheet{background:transparent}
+  .before .sheet h4{color:#1c2130;font-size:13px;margin:0;opacity:.55}
+  .before .sheet .sub{color:#1c2130;font-size:10px;opacity:.35}
+  .before .row .n{color:#1c2130;opacity:.35}
+  .before .row .t{color:#1c2130;opacity:.55}
+  .before .row .s{color:#1c2130;opacity:.3}
+  .before .row .x{color:#1c2130;opacity:.4}
+
+  /* 改后：面板自己铺 DARK.bg，字用 DARK.text */
+  .after .sheet{background:#0b0c10}
+  .after .sheet h4{color:#f2f3f6;font-size:13px;margin:0;font-weight:700}
+  .after .sheet .sub{color:#9ba2ae;font-size:10px}
+  .after .row .n{color:#9ba2ae}
+  .after .row .t{color:#f2f3f6}
+  .after .row .s{color:#9ba2ae}
+  .after .row .x{color:#9ba2ae}
+
+  .row{display:flex;align-items:center;gap:8px;height:34px;font-size:12px}
+  .row .n{width:14px;text-align:center;font-size:10px}
+  .row .body{flex:1;min-width:0}
+  .row .t{font-size:12px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .s{font-size:10px;line-height:1.3}
+  .row .x{font-size:11px}
+  .row.cur .t{color:#7c93ff}
+  .bars{display:inline-flex;gap:1.5px;align-items:flex-end;height:10px}
+  .bars i{width:2px;background:#7c93ff;border-radius:1px;display:block}
+  .bars i:nth-child(1){height:6px}.bars i:nth-child(2){height:10px}.bars i:nth-child(3){height:4px}
+  .tag{display:inline-block;font-size:11px;border-radius:999px;padding:2px 9px;margin-bottom:6px}
+  .tag.bad{background:var(--red-soft);color:var(--red)}
+  .tag.good{background:var(--ok-soft);color:var(--ok)}
+  .foot{margin-top:26px;font-size:12px;color:var(--dim);text-align:center}
+  @media(max-width:780px){.stage{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>播放页队列：黑底 + 深灰字，几乎看不见</h1>
+  <p class="lead">不是配色选错，是这块面板根本没铺底色，一直透出播放页的黑背景。</p>
+
+  <div class="hero">
+    <b>一句话结论</b>
+    <span>QueueSheet 根节点的背景写死成 <code>#00000000</code>（全透明），而 <code>bindSheet</code> 的 <code>backgroundColor</code> 在这版 SDK 上不生效 —— 透明面板直接透出播放页的 <code>#0B0C10</code>，可文字用的是浅色主题的深灰，两者撞在一起，所以「播放队列」「共 200 首」几乎看不见。同一屏的「更多」是正常浅色卡片，差别只在于 SongMenu 自己铺了底。</span>
+  </div>
+
+  <h2>改前 / 改后</h2>
+  <div class="stage">
+    <div class="before">
+      <div class="cap"><span class="tag bad">改前</span><br><b>透明面板 + 浅色主题文字</b></div>
+      <div class="phone">
+        <div class="lyric">
+          <span>作词：姚若龙</span><span>作曲：李偲菘</span><span class="on">我怀念的</span><span>是无话不说</span>
+        </div>
+        <div class="sheet">
+          <h4>播放队列</h4>
+          <div class="sub">共 200 首 · 正在播放第 2 首</div>
+          <div class="row"><span class="n">1</span><div class="body"><div class="t">Always Online</div><div class="s">林俊杰</div></div><span class="x">✕</span></div>
+          <div class="row cur"><span class="bars"><i></i><i></i><i></i></span><div class="body"><div class="t">我怀念的</div><div class="s">孙燕姿</div></div><span class="x">✕</span></div>
+          <div class="row"><span class="n">3</span><div class="body"><div class="t">不得不爱</div><div class="s">潘玮柏 / 弦子</div></div><span class="x">✕</span></div>
+          <div class="row"><span class="n">4</span><div class="body"><div class="t">爱你</div><div class="s">By2</div></div><span class="x">✕</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="after">
+      <div class="cap"><span class="tag good">改后</span><br><b>自己铺深色底 + 亮色文字</b></div>
+      <div class="phone">
+        <div class="lyric">
+          <span>作词：姚若龙</span><span>作曲：李偲菘</span><span class="on">我怀念的</span><span>是无话不说</span>
+        </div>
+        <div class="sheet">
+          <h4>播放队列</h4>
+          <div class="sub">共 200 首 · 正在播放第 2 首</div>
+          <div class="row"><span class="n">1</span><div class="body"><div class="t">Always Online</div><div class="s">林俊杰</div></div><span class="x">✕</span></div>
+          <div class="row cur"><span class="bars"><i></i><i></i><i></i></span><div class="body"><div class="t">我怀念的</div><div class="s">孙燕姿</div></div><span class="x">✕</span></div>
+          <div class="row"><span class="n">3</span><div class="body"><div class="t">不得不爱</div><div class="s">潘玮柏 / 弦子</div></div><span class="x">✕</span></div>
+          <div class="row"><span class="n">4</span><div class="body"><div class="t">爱你</div><div class="s">By2</div></div><span class="x">✕</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">改后与播放页同底（<code>#0B0C10</code>），等于从播放页里长出来的一块；迷你条展开的队列仍然跟随系统主题，不强制深色。</p>
+
+  <h2>具体改动</h2>
+  <table>
+    <tr><th>位置</th><th>改动</th><th>解决什么</th></tr>
+    <tr>
+      <td>QueueSheet</td>
+      <td>根节点 <code>#00000000</code> → <code>this.p().bg</code>，自己铺不透明底</td>
+      <td>不再透出底下的播放页黑背景，文字与底色不再撞色</td>
+    </tr>
+    <tr>
+      <td>QueueSheet</td>
+      <td>新增 <code>@Prop dark</code>，<code>p()</code> 改为 <code>palette(dark || isDark)</code></td>
+      <td>从播放页展开时用深色调色板（白字），从迷你条展开仍跟随主题</td>
+    </tr>
+    <tr>
+      <td>PlayerPage</td>
+      <td><code>QueueSheet({ dark: true })</code>；<code>bindSheet</code> 底色在 <code>panel === 4</code> 时用 <code>palette(true).bg</code></td>
+      <td>面板与 sheet 容器同色，圆角处不漏一圈浅色</td>
+    </tr>
+    <tr>
+      <td>QueueSheet</td>
+      <td>副标题 / 序号 / 关闭 × 的 <code>text3</code> 提升为 <code>text2</code></td>
+      <td>深底上 text3（#5E6572）对比太低，辅助信息也要能读</td>
+    </tr>
+    <tr>
+      <td>PlayerPage</td>
+      <td>失败面板（panel 7）补上 <code>.backgroundColor(this.p().bg)</code></td>
+      <td>同一个隐患：之前也靠 sheet 的底色，换尺寸就可能透底</td>
+    </tr>
+  </table>
+
+  <h2>自检新增 AB 组</h2>
+  <table>
+    <tr><th>检查点</th><th>拦的是什么</th></tr>
+    <tr><td>QueueSheet 必须有 <code>backgroundColor(this.p().bg)</code></td><td>根节点又不铺底，会再次透出播放页黑底</td></tr>
+    <tr><td>禁止 <code>backgroundColor('#00000000')</code></td><td>写死全透明，文字和底色直接撞成一片</td></tr>
+    <tr><td>必须有 <code>@Prop dark</code>，播放页必须传 <code>dark: true</code></td><td>沉浸深色页里弹出一块浅色面板</td></tr>
+    <tr><td><code>bindSheet</code> 底色需 <code>panel === 4 ? palette(true).bg</code></td><td>容器与面板不同色，圆角漏边</td></tr>
+  </table>
+  <p class="note">反向验证：把根节点底色改回 <code>#00000000</code>，自检同时报两条 FAIL；恢复后回到 PASS。</p>
+
+  <p class="foot">音栈 v1.0 · 播放页队列面板 · 2026-11-06</p>
+</div>
+</body>
+</html>

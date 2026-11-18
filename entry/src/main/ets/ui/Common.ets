@@ -447,7 +447,7 @@ export struct SheetCard {
         })
         if (this.sheet.playCount > 0) {
           Row({ space: 3 }) {
-            SymbolGlyph($r('sys.symbol.play_fill')).fontSize(9).fontColor(['#FFFFFFFF'])
+            SymbolGlyph($r('sys.symbol.play_fill')).fontSize(FONT.micro).fontColor(['#FFFFFFFF'])
             Text(formatCount(this.sheet.playCount)).fontSize(10).fontColor('#FFFFFFFF')
           }
           .backgroundColor('#4D000000')
@@ -823,7 +823,7 @@ export struct SongRow {
             .layoutWeight(1)
           if (this.showSource && this.song.source !== 'local' && this.song.source.length > 0) {
             Text(platformShort(this.song.source))
-              .fontSize(9)
+              .fontSize(FONT.micro)
               .fontColor(platformColor(this.song.source))
               .border({ width: 0.5, color: withAlpha(platformColor(this.song.source), 0.4) })
               .borderRadius(4)
@@ -859,7 +859,7 @@ export struct SongRow {
 
       if (this.showQuality && this.song.quality.length > 0 && this.song.quality !== 'local') {
         Text(qualityLabel(this.song.quality))
-          .fontSize(9)
+          .fontSize(FONT.micro)
           .fontColor(this.p().text3)
           .border({ width: 0.5, color: this.p().line })
           .borderRadius(4)
@@ -1106,7 +1106,7 @@ export struct TinyBadge {
   @Prop color: string = '#FF6E7480';
   build() {
     Text(this.text)
-      .fontSize(9)
+      .fontSize(FONT.micro)
       .fontColor(this.color)
       .backgroundColor(withAlpha(this.color, 0.1))
       .borderRadius(4)

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>音栈 · 底栏收敛到三项 + 音乐库并入首页</title>
+<style>
+  :root{
+    --ink:#12151c; --ink2:#4a505e; --ink3:#7c8494;
+    --line:#e6e9f0; --brand:#2d6cff; --bg:#f5f7fb; --card:#fff;
+    --ok:#0a8f52; --bad:#c2334a; --amber:#b06a00;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:44px 24px 64px;background:
+      radial-gradient(1200px 520px at 18% -10%, #e8eeff 0%, rgba(232,238,255,0) 62%),
+      radial-gradient(900px 420px at 92% 4%, #f3e9ff 0%, rgba(243,233,255,0) 58%),
+      var(--bg);
+    color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;letter-spacing:.14em;
+    color:var(--brand);background:#e9efff;border:1px solid #d8e2ff;padding:6px 12px;border-radius:999px;font-weight:600}
+  h1{font-size:33px;line-height:1.26;margin:18px 0 10px;letter-spacing:-.4px}
+  h1 em{font-style:normal;background:linear-gradient(100deg,#2d6cff,#8b5cf6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{font-size:15.2px;line-height:1.85;color:var(--ink2);max-width:820px}
+  .lead b{color:var(--ink)}
+
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;margin-top:24px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 18px 44px -30px rgba(16,24,40,.3)}
+  .stage h2{font-size:17.5px;margin:0 0 4px}
+  .stage .sub{font-size:13px;color:var(--ink3);margin:0 0 20px}
+
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:34px}
+  .case{text-align:center}
+  .tag{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.06em;margin-bottom:10px;
+    padding:4px 10px;border-radius:999px}
+  .case.before .tag{color:var(--bad);background:#fdf0f2;border:1px solid #f8dfe3}
+  .case.after .tag{color:var(--ok);background:#effaf4;border:1px solid #d8f0e3}
+  .phone{position:relative;border:1px solid #e1e6ef;border-radius:20px;overflow:hidden;background:#fff;
+    box-shadow:0 14px 34px -26px rgba(16,24,40,.5);text-align:left}
+  .status{height:24px;background:#f7f9fd;display:flex;align-items:center;justify-content:space-between;
+    padding:0 12px;font-size:8.5px;color:#8a92a3;border-bottom:1px solid #eef1f7}
+  .screen{padding:10px 12px 12px;min-height:150px}
+  .clock{font-size:19px;font-weight:800;letter-spacing:-.5px}
+  .sm{font-size:8.6px;color:#8a92a3;margin-top:2px}
+  .barSearch{height:26px;border-radius:999px;background:#f4f6fb;border:1px solid #eaeef6;margin-top:9px;
+    display:flex;align-items:center;padding:0 9px;font-size:8.6px;color:#a3aab9;gap:5px}
+  .bars{margin-top:9px;border-radius:10px;background:#fff;border:1px solid #eef1f7;padding:8px}
+  .bar{margin-top:16px;border-radius:999px;background:rgba(255,255,255,.9);
+    border:1px solid rgba(0,0,0,.06);box-shadow:0 8px 18px -14px rgba(28,42,80,.5);
+    display:flex;padding:6px 4px}
+  .t{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;color:#a3aab9;font-size:8px}
+  .t.on{color:#2d6cff;font-weight:600}
+  .dot{width:15px;height:15px;border-radius:5px;background:#e8ecf5;display:flex;align-items:center;justify-content:center;
+    font-size:8px;color:#9aa2b2}
+  .t.on .dot{background:#e2ebff;color:#2d6cff}
+  .note{font-size:12.4px;line-height:1.7;color:var(--ink2);margin-top:12px;text-align:left}
+  .note b{color:var(--ink)}
+  .note em{font-style:normal;color:var(--bad);font-weight:600}
+  .case.after .note em{color:var(--ok)}
+
+  .chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+  .chip{font-size:9px;padding:4px 9px;border-radius:999px;border:1px solid #e6e9f0;white-space:nowrap;color:#4a505e;background:#fff}
+  .chip.on{background:#2d6cff;border-color:#2d6cff;color:#fff}
+  .chip.gone{color:#c2334a;border-color:#f2cfd6;background:#fdf4f6;text-decoration:line-through}
+
+  .stack{display:flex;flex-direction:column;gap:7px;margin-top:6px}
+  .blk{border-radius:10px;padding:9px 11px;font-size:10.5px;line-height:1.5;border:1px solid #e9edf6;background:#f8fafd;color:#5a6273}
+  .blk b{display:block;font-size:11.4px;color:#12151c;margin-bottom:2px;font-weight:700}
+  .blk.hero{background:linear-gradient(135deg,#eef3ff,#f7f4ff);border-color:#dbe4ff}
+  .blk.dead{background:#fdf5f6;border-color:#f4dbdf;color:#a8556a}
+  .blk.dead b{color:#a02a3f}
+  .blk.live{background:#f4fbf7;border-color:#d9efe4}
+  .blk.live b{color:#0a6e42}
+  .grid4{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .card4{border-radius:10px;background:#f8fafd;border:1px solid #e9edf6;padding:8px 9px}
+  .card4 b{display:block;font-size:10.4px;color:#12151c}
+  .card4 span{font-size:8.6px;color:#8a92a3}
+
+  table{width:100%;border-collapse:collapse;margin-top:4px;font-size:13.2px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11.5px;letter-spacing:.08em;color:var(--ink3);font-weight:700}
+  tr:last-child td{border-bottom:none}
+  td b{color:var(--ink)}
+  code{background:#f1f4fb;border:1px solid #e2e8f6;border-radius:5px;padding:1px 5px;font-size:11.8px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#33405c}
+  td.num{background:none;border:none;border-bottom:1px solid var(--line);padding:11px 12px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#33405c;font-size:12.2px}
+
+  ul.check{margin:6px 0 0;padding:0;list-style:none}
+  ul.check li{position:relative;padding-left:20px;font-size:13.4px;line-height:1.85;color:var(--ink2)}
+  ul.check li:before{content:"✓";position:absolute;left:0;color:var(--ok);font-weight:700}
+  ul.check li.warn:before{content:"!";color:var(--amber)}
+  .foot{margin-top:22px;font-size:12.2px;color:var(--ink3);line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <span class="eyebrow">音栈 · v1.0 · 底栏与首页结构调整</span>
+  <h1>底栏从四项收到三项，<em>音乐库整块搬进首页</em></h1>
+  <p class="lead">
+    两件事一起做：<b>咪咕退出「发现」</b>——它的榜单和歌单接口对匿名请求一直返空，留着只是一排点了没内容的胶囊；
+    <b>音乐库并入首页</b>——首页原来那两块（排行榜、推荐歌单）在发现页都有一模一样的一份，删掉之后
+    四宫格和自建歌单正好补上，底栏也就从四项收回三项。
+  </p>
+
+  <div class="stage">
+    <h2>一、底栏与发现平台</h2>
+    <p class="sub">左：改前 4 项 + 5 个平台（咪咕必空）　右：改后 3 项 + 4 个平台</p>
+    <div class="pair">
+      <div class="case before">
+        <span class="tag">改前</span>
+        <div class="phone">
+          <div class="status"><span>11:13</span><span>5G 100%</span></div>
+          <div class="screen">
+            <div class="clock">11:13</div>
+            <div class="sm">11月6日 · 洛雪音源</div>
+            <div class="chips">
+              <span class="chip on">网易云</span><span class="chip">QQ</span><span class="chip">酷我</span>
+              <span class="chip">酷狗</span><span class="chip gone">咪咕</span>
+            </div>
+            <div class="stack" style="margin-top:9px">
+              <div class="blk dead" style="padding:14px 11px"><b>咪咕 · 空态</b>「暂未提供公开榜单」</div>
+            </div>
+          </div>
+          <div class="bar">
+            <div class="t on"><span class="dot">●</span>首页</div>
+            <div class="t"><span class="dot">◆</span>发现</div>
+            <div class="t"><span class="dot">≡</span>音乐库</div>
+            <div class="t"><span class="dot">⚙</span>设置</div>
+          </div>
+        </div>
+        <p class="note"><em>四个 Tab 里有两个装着重叠的东西</em>：音乐库的四宫格和「我的歌单」，首页本来也该有。</p>
+      </div>
+
+      <div class="case after">
+        <span class="tag">改后</span>
+        <div class="phone">
+          <div class="status"><span>11:13</span><span>5G 100%</span></div>
+          <div class="screen">
+            <div class="clock">11:13</div>
+            <div class="sm">11月6日 · 洛雪音源</div>
+            <div class="chips">
+              <span class="chip on">网易云</span><span class="chip">QQ</span><span class="chip">酷我</span>
+              <span class="chip">酷狗</span>
+            </div>
+            <div class="stack" style="margin-top:9px">
+              <div class="blk live" style="padding:14px 11px"><b>四个平台都有内容</b>咪咕已从清单里摘掉</div>
+            </div>
+          </div>
+          <div class="bar">
+            <div class="t on"><span class="dot">●</span>首页</div>
+            <div class="t"><span class="dot">◆</span>发现</div>
+            <div class="t"><span class="dot">⚙</span>设置</div>
+          </div>
+        </div>
+        <p class="note"><em>三项，每格更宽</em>：少一个 Tab，图标和文字的点击面积都变大。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>二、首页换掉两块，补上四宫格</h2>
+    <p class="sub">排行榜和推荐歌单在发现页各有一份，首页这份是重复的</p>
+    <div class="pair">
+      <div class="case before">
+        <span class="tag">改前</span>
+        <div class="phone">
+          <div class="screen" style="min-height:0">
+            <div class="stack">
+              <div class="blk"><b>11:13 · 时间问候</b>日期 · 音源名 ｜ 右上：＋、下载</div>
+              <div class="blk">搜索框</div>
+              <div class="blk dead"><b>排行榜 · 横向大卡</b>与「发现 → 排行榜」同一批数据</div>
+              <div class="blk dead"><b>推荐歌单 · 平台 + 排序 + 双列</b>与「发现 → 推荐歌单」同一批数据</div>
+            </div>
+          </div>
+        </div>
+        <p class="note">首页 ≈ 发现页的<b>缩略复制</b>，还多两层壳；音乐库里真正属于「我的」东西反而要单独点一次 Tab。</p>
+      </div>
+
+      <div class="case after">
+        <span class="tag">改后</span>
+        <div class="phone">
+          <div class="screen" style="min-height:0">
+            <div class="stack">
+              <div class="blk"><b>11:13 · 时间问候</b>日期 · 音源名 ｜ 右上：＋（新建歌单）</div>
+              <div class="blk">搜索框</div>
+              <div class="grid4">
+                <div class="card4"><b>我喜欢</b><span>N 首</span></div>
+                <div class="card4"><b>最近播放</b><span>N 首</span></div>
+                <div class="card4"><b>本地音乐</b><span>N 首</span></div>
+                <div class="card4"><b>下载管理</b><span>N 首</span></div>
+              </div>
+              <div class="blk hero"><b>我的歌单</b>新建 / 长按重命名或删除 / 双列封面</div>
+            </div>
+          </div>
+        </div>
+        <p class="note">首页只剩<b>「我的」</b>：要发现什么去发现页，要听自己的就在这一屏。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>三、连带处理的三个点</h2>
+    <p class="sub">删一个 Tab 和搬一块内容，会牵出几处「不处理就出问题」的地方</p>
+    <table>
+      <tr><th style="width:30%">位置</th><th>问题</th><th style="width:38%">处理</th></tr>
+      <tr>
+        <td><b>老配置里的默认发现平台</b></td>
+        <td>以前可以把咪咕设成默认，值存在本地。现在发现页没有这个平台，进来会一个胶囊都不选中。</td>
+        <td>发现页读到不在白名单里的值就落回网易云；设置页同样回退，弹窗不会出现「全都没选」的样子。</td>
+      </tr>
+      <tr>
+        <td><b>设置页「默认发现平台」</b></td>
+        <td>那排选项读的是全平台表，咪咕会再从设置里钻回来。</td>
+        <td>改成读发现白名单 <code>discoverPlatforms()</code>；全平台表 <code>PLATFORMS</code> 保留，搜索和歌单页还在用。</td>
+      </tr>
+      <tr>
+        <td><b>首页右上角下载键</b></td>
+        <td>四宫格里已经有「下载管理」，顶栏再放一个，同一页两个入口进同一处——项目里早有规则禁止这种重复。</td>
+        <td>删掉顶栏下载键，只留「＋」新建歌单。自检的重复入口扫描确认已收口。</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="stage">
+    <h2>四、验证</h2>
+    <p class="sub">BUILD SUCCESSFUL · verify-app success · 31 项自检</p>
+    <ul class="check">
+      <li>编译通过，签名验证 <code>verifiedPassed = True</code>，<code>com.yinzhan.music / 1 / 1.0</code>，包体 3.55 MB</li>
+      <li>自检 <b>31 项：PASS 29 / WARN 2 / FAIL 0</b>（两条 WARN 是既有的冗余广播，与本次无关）</li>
+      <li>AC 组换成 5 类新规则：底栏必须是三项、<code>LibraryPage.ets</code> 不许再存在、首页五个入口（四宫格 + 我的歌单）一个都不能少、首页不许再出现榜单/推荐歌单代码、发现平台白名单里不许有咪咕</li>
+      <li>四条规则都做了反向注入：改回「音乐库」标签、把 <code>'mg'</code> 加回白名单、把「我喜欢」改成「红心」、恢复 LibraryPage 文件 —— 四次都会立刻报 FAIL，确认规则不是摆设</li>
+      <li>顺带发现并处理了一个真实重复：首页顶栏下载键 vs 四宫格「下载管理」，已被重复入口扫描抓出</li>
+    </ul>
+    <p class="foot">
+      装包前先卸载旧版（公共签名会冲突）。如果希望首页再紧凑一点，可以把四宫格从两行压成一行四个小卡，或把「我的歌单」往前提。
+    </p>
+  </div>
+
+</div>
+</body>
+</html>

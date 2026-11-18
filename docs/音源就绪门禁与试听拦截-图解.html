@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>音栈 · 三处「明明有源，却像没源」</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#ffffff; --ink:#1c2130; --sub:#5b6478; --line:#e5e8f0;
+    --brand:#4a5bd6; --brand-soft:#eef0ff; --ok:#0f9d6e; --ok-soft:#e7f7f1;
+    --warn:#d9632f; --warn-soft:#fff0e8; --dim:#8a93a6; --red:#c0392b; --red-soft:#fdecea;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:34px 20px 60px;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:27px;margin:0 0 6px;letter-spacing:.5px}
+  .lead{color:var(--sub);font-size:14px;margin:0 0 22px}
+  .hero{background:linear-gradient(120deg,#4a5bd6,#6b53d8);color:#fff;border-radius:16px;
+    padding:22px 26px;margin-bottom:24px;box-shadow:0 8px 24px rgba(74,91,214,.18)}
+  .hero b{font-size:18px;display:block;margin-bottom:6px}
+  .hero span{font-size:14px;opacity:.94}
+  h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--brand)}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .col{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 17px}
+  .col h3{margin:0 0 12px;font-size:15px;display:flex;align-items:center;gap:7px}
+  .tag{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}
+  .t-gray{background:#eef0f4;color:var(--sub)} .t-red{background:var(--red-soft);color:var(--red)}
+  .t-green{background:var(--ok-soft);color:var(--ok)} .t-blue{background:var(--brand-soft);color:var(--brand)}
+  .col ul{margin:0;padding-left:17px;font-size:13px;color:var(--sub)}
+  .col li{margin:7px 0}
+  .col li b{color:var(--ink)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;font-size:13px}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f8f9fd;color:var(--sub);font-weight:600;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:600;white-space:nowrap}
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:6px 0 4px}
+  .step{flex:1 1 190px;min-width:180px;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;padding:13px 14px;position:relative}
+  .step .n{font-size:11px;color:var(--dim);font-weight:700;letter-spacing:1px}
+  .step b{display:block;font-size:14px;margin:4px 0 5px}
+  .step p{margin:0;font-size:12px;color:var(--sub);line-height:1.55}
+  .arrow{display:flex;align-items:center;justify-content:center;width:28px;color:var(--brand);font-size:19px;font-weight:700}
+  .bad{border-color:#f2c4b8;background:#fff8f5}
+  .good{border-color:#bfe6d6;background:#f6fdfa}
+  .quote{background:#fff8f5;border-left:4px solid var(--warn);border-radius:0 10px 10px 0;
+    padding:12px 16px;font-size:13px;color:var(--sub);margin:12px 0}
+  .quote b{color:var(--ink)}
+  .nums{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px}
+  .num{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:center}
+  .num strong{display:block;font-size:24px;color:var(--brand);line-height:1.2}
+  .num span{font-size:12px;color:var(--sub)}
+  .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .item .f{font-size:11px;color:var(--brand);font-family:ui-monospace,Menlo,monospace;word-break:break-all}
+  .item p{margin:5px 0 0;font-size:12px;color:var(--sub)}
+  code{background:#f1f3f9;padding:1px 5px;border-radius:4px;font-size:12px;color:#3a46a8}
+  .foot{margin-top:26px;font-size:12px;color:var(--dim);text-align:center}
+  @media(max-width:760px){.grid3,.grid2,.nums{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>三处「明明有源，却像没源」</h1>
+  <p class="lead">按 GitHub 对标报告的落地顺序，本轮做完第 1、2 步，并把第 3 步（单上下文）做成可用的最小形态。</p>
+
+  <div class="hero">
+    <b>一句话结论</b>
+    <span>不是鸿蒙不给力，是我们把「脚本执行完」当成了「可以取链」，又给兜底直连开了「探测失败也信」的口子 ——
+    前者让要等 rconfig 的独家源每次都白试，后者让 11 秒的试听提示音被当成整首播。</span>
+  </div>
+
+  <h2>三个根因</h2>
+  <div class="grid3">
+    <div class="col bad">
+      <h3><span class="tag t-red">已修</span>试听片段当整首</h3>
+      <ul>
+        <li>酷我 <b>convert_url_with_sign</b> 对免费/无版权歌照样回 <code>code:200</code> 和一个正常 URL</li>
+        <li>但 <code>data.duration</code> 只有 <b>11 秒</b>，音频是一句「免费听歌权限」的提示音</li>
+        <li>上一轮我给它加了「探测失败也信任」，正好把这道拦截拆了</li>
+      </ul>
+    </div>
+    <div class="col bad">
+      <h3><span class="tag t-red">已修</span>加载 ≠ 就绪</h3>
+      <ul>
+        <li>独家音源要先 <code>GET /rconfig</code> 拿签名配置，<b>之后</b>才注册 request 处理器</li>
+        <li>我们拿到 <code>loaded</code> 就发 <code>musicUrl</code>，必然回「未注册 request 处理器」</li>
+        <li>结果：选了独家源，实际每次都在用别的源补位</li>
+      </ul>
+    </div>
+    <div class="col bad">
+      <h3><span class="tag t-red">已修</span>档位把源整条筛掉</h3>
+      <ul>
+        <li>inited 上报的 <code>qualitys</code> 普遍残缺（只写 128k 的源其实能给 flac）</li>
+        <li>旧逻辑「这一档不在列表里就跳过」，选无损时半屏音源直接消失</li>
+        <li>官方只有 4 档且<b>不用来筛源</b></li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>改了什么</h2>
+  <table>
+    <tr><th>位置</th><th>改动</th><th>解决什么</th></tr>
+    <tr>
+      <td>Resolver<br><span style="font-weight:400;color:#8a93a6">kuwoDirect</span></td>
+      <td>先看接口自报 <code>duration</code>（差 10 秒以上即判片段），再用文件体积兜底；探测判出「试听片段」时<b>硬拒绝</b>，只有非试听的探测失败才继续信任</td>
+      <td>11 秒提示音不会再被当整首播；失败提示里会写「只给到 11 秒试听片段」</td>
+    </tr>
+    <tr>
+      <td>Resolver<br><span style="font-weight:400;color:#8a93a6">trySources</span></td>
+      <td>候选改成「已 inited 才算就绪」；未就绪但在 45 秒宽限内的进等待队列，没有就绪源时最多等 8 秒</td>
+      <td>独家音源能在 rconfig 回来之后再取链，而不是抢跑失败</td>
+    </tr>
+    <tr>
+      <td>Resolver<br><span style="font-weight:400;color:#8a93a6">fetchFromSource</span></td>
+      <td>拆成 <code>fetchOnce</code> + 自愈包装：命中「未注册处理器 / 音源未加载 / 调用失败」时，重建该音源再试一次</td>
+      <td>脚本卡死、handler 丢失不用重启 App</td>
+    </tr>
+    <tr>
+      <td>Resolver<br><span style="font-weight:400;color:#8a93a6">常量</span></td>
+      <td>取链超时 12s → <b>18s</b>；音质档位从「筛源」改为「降权排序」</td>
+      <td>两跳签名 / 代理型音源不再被判超时；选无损时音源不会被整条排除</td>
+    </tr>
+    <tr>
+      <td>LxRunner</td>
+      <td>新增 <code>inited</code> 集合、<code>loadedAgo()</code>、<code>waitInited()</code>、<code>resetSandbox()</code>；加载/错误/卸载都清理状态</td>
+      <td>有地方可以「等它就绪」，也有地方可以把沙箱擦干净重来</td>
+    </tr>
+    <tr>
+      <td>lx_bridge.html</td>
+      <td>新增 <code>__reset()</code>：清空实例、挂起请求、全局 lx</td>
+      <td>等价官方「切源即销毁 QuickJS 线程」的最小动作</td>
+    </tr>
+    <tr>
+      <td>SourceRepo</td>
+      <td>新增 <code>reload(id)</code> / <code>reloadAll()</code>；自检前若未就绪先重建</td>
+      <td>「自检」按钮顺带变成修复入口</td>
+    </tr>
+    <tr>
+      <td>音源页</td>
+      <td>统计从「已启用 / 已加载」改为「已启用 / 已加载 / <b>已就绪</b>」；有未就绪源时出现「重建」按钮</td>
+      <td>一眼看出「装了 20 个，到底几个真能干活」</td>
+    </tr>
+    <tr>
+      <td>selfcheck.py</td>
+      <td>新增 R 组：试听拦截必须存在、inited 门禁不能退化；<code>_func_body</code> 改成正则匹配</td>
+      <td>下次重构再把这两条改回去，构建阶段就会 FAIL</td>
+    </tr>
+  </table>
+
+  <h2>新的取链判定</h2>
+  <div class="flow">
+    <div class="step">
+      <div class="n">STEP 1</div><b>筛候选</b>
+      <p>启用 + 平台匹配 + 脚本已加载。就绪的直接进候选；未就绪但在 45s 内的进等待队列。</p>
+    </div>
+    <div class="arrow">›</div>
+    <div class="step">
+      <div class="n">STEP 2</div><b>等 inited</b>
+      <p>没有就绪源（或首选在初始化）时，最多等 8 秒。<b>等到了再问</b>，不再抢跑。</p>
+    </div>
+    <div class="arrow">›</div>
+    <div class="step good">
+      <div class="n">STEP 3</div><b>取链 + 探测</b>
+      <p>音质不匹配只降权不淘汰；探测判「试听片段」直接判死，其余失败按设置信任。</p>
+    </div>
+    <div class="arrow">›</div>
+    <div class="step">
+      <div class="n">STEP 4</div><b>兜底直连</b>
+      <p>接口 duration 先过一遍，体积再过一遍。两道都过才交给播放器。</p>
+    </div>
+  </div>
+
+  <div class="quote">
+    <b>为什么还留了一条「从没上报平台的源」的口子：</b>
+    20 个脚本里有 5 个（野花、野草、念心、全豆要 v4.0、屿溪终章）全文搜不到 <code>inited</code>，
+    可能是 v1 协议或者被混淆到看不出字段。它们此前同样被判「没上报平台」。
+    所以规则是：只要有一个就绪源，它们不参与；<b>一个都没有时，仍然按未知平台问一遍</b> ——
+    宁可多花一次超时，也别直接告诉用户「这首歌没有可用音源」。
+  </div>
+
+  <h2>回归前后的直连对比</h2>
+  <div class="grid2">
+    <div class="col bad">
+      <h3><span class="tag t-red">改之前</span>探测失败 = 信任</h3>
+      <ul>
+        <li>接口回 <code>code:200</code> + url → 直接返回 <code>128k mp3</code></li>
+        <li>探测报「只有 181KB，是试听片段」→ 因为开了「默认信任」，照样返回</li>
+        <li>播放器拿到的是一句人声提示，用户听到「只有一段语音」</li>
+      </ul>
+    </div>
+    <div class="col good">
+      <h3><span class="tag t-green">改之后</span>两道校验</h3>
+      <ul>
+        <li>接口 <code>duration:11</code> 与原曲 200 秒差 10 秒以上 → 直接拒绝，连探测都省了</li>
+        <li>就算接口没给 duration，探测报「试听片段」同样硬拒绝</li>
+        <li>只有 403 / 超时 / 拿不到 content-length 这类<b>判断不了</b>的失败才继续信任</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>验证</h2>
+  <div class="nums">
+    <div class="num"><strong>BUILD</strong><span>SUCCESSFUL</span></div>
+    <div class="num"><strong>18</strong><span>自检 PASS</span></div>
+    <div class="num"><strong>4</strong><span>WARN（既有）</span></div>
+    <div class="num"><strong>0</strong><span>FAIL</span></div>
+  </div>
+  <table>
+    <tr><th>项目</th><th>结果</th></tr>
+    <tr><td>签名 / 验签</td><td><code>verify-app success</code>，version = 2，Digest verify true</td></tr>
+    <tr><td>包名 / 版本</td><td>pack.info 与 module.json 双向核对：<code>com.yinzhan.music</code> / 1 / 1.0</td></tr>
+    <tr><td>profile</td><td><code>verifiedPassed = True</code></td></tr>
+    <tr><td>反向验证</td><td>临时把试听判断改成 <code>false</code> 重跑自检，R 组立刻 FAIL；还原后 PASS —— 检查真的在工作</td></tr>
+    <tr><td>产物</td><td><code>build/音栈-v1.0-signed.hap</code>（3.53 MB）</td></tr>
+  </table>
+
+  <h2>这一轮没做的</h2>
+  <div class="grid2">
+    <div class="col">
+      <h3><span class="tag t-gray">P1-5</span>完整单上下文串行</h3>
+      <ul>
+        <li>报告里那一步是「同一时刻只跑一个音源、换源就销毁重建」，要重写加载与调度，并把并发竞速改成串行</li>
+        <li>没有真机回传，全量重写很可能把现在能用的多源体验弄坏；报告本身也建议先出「2~3 个源」的最小验证版</li>
+        <li>本轮先落地了它的<b>自愈半边</b>：整页 <code>__reset</code> + 单源 <code>reload</code> + 取链失败自动重建一次</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3><span class="tag t-gray">仍无解</span>服务端那一侧</h3>
+      <ul>
+        <li>星海后端 403、VIP 曲库风控、官方强混淆源的服务端签名 —— 官方客户端同样拿不到</li>
+        <li>给酷我返回试听片段这件事，我们只能识别并明确提示，改不了它的授权策略</li>
+        <li>以上结论来自源码核对与离线验证，未做真机抓包</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="foot">音栈 v1.0 · 音源就绪门禁与试听拦截 · 2026-11-06</p>
+</div>
+</body>
+</html>

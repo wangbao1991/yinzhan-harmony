@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>音栈 · 推荐歌单为什么一直不变</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#fff; --ink:#1c2130; --sub:#5b6478; --line:#e5e8f0;
+    --brand:#4a5bd6; --brand-soft:#eef0ff; --ok:#0f9d6e; --ok-soft:#e7f7f1;
+    --warn:#d9632f; --warn-soft:#fff0e8; --dim:#8a93a6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:34px 20px 60px;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 6px}
+  .lead{color:var(--sub);font-size:14px;margin:0 0 22px}
+  .hero{background:linear-gradient(120deg,#4a5bd6,#6b53d8);color:#fff;border-radius:16px;
+    padding:22px 26px;margin-bottom:24px;box-shadow:0 8px 24px rgba(74,91,214,.18)}
+  .hero b{font-size:18px;display:block;margin-bottom:6px}
+  .hero span{font-size:14px;opacity:.94}
+  h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--brand)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;font-size:13px}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f8f9fd;color:var(--sub);font-weight:600;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:600;white-space:nowrap}
+  code{background:#f1f3f9;padding:1px 5px;border-radius:4px;font-size:12px;color:#3a46a8}
+  .quote{background:#fff8f5;border-left:4px solid var(--warn);border-radius:0 10px 10px 0;
+    padding:12px 16px;font-size:13px;color:var(--sub);margin:12px 0}
+  .quote b{color:var(--ink)}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:14px 0}
+  .cell{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .cell .n{font-size:12px;color:var(--brand);font-weight:700;letter-spacing:.5px}
+  .cell h3{font-size:15px;margin:6px 0 6px}
+  .cell p{margin:0;font-size:13px;color:var(--sub)}
+  .flow{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;font-size:13px}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}
+  .tag{border-radius:8px;padding:5px 10px;font-size:12px;background:#f1f3f9;color:#3a46a8;white-space:nowrap}
+  .tag.bad{background:#fdecea;color:#c0392b}
+  .tag.good{background:var(--ok-soft);color:var(--ok)}
+  .arrow{color:var(--dim);font-size:12px}
+  .note{font-size:12.5px;color:var(--dim);margin-top:8px}
+  .foot{margin-top:26px;font-size:12px;color:var(--dim);text-align:center}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>推荐歌单为什么「一直是那几个」</h1>
+  <p class="lead">不是网络缓存，也不是没退出干净。是数据源、翻页范围、刷新时机三件事同时出了问题。</p>
+
+  <div class="hero">
+    <b>一句话结论</b>
+    <span>我们一直在读「歌单广场 · 历史累计最热」这一份几乎不动的榜单，而且只翻 3 页、只显示前 8 张，首页又是常驻页面从不重新请求 —— 所以退出多少次、用多少小时，看到的都是同一批。</span>
+  </div>
+
+  <h2>三条原因，一条都不冤</h2>
+  <div class="grid">
+    <div class="cell">
+      <div class="n">原因 1 · 数据源</div>
+      <h3>拿的是「最热榜」，不是「推荐」</h3>
+      <p>网易走的是 <code>playlist/list?order=hot</code>，按历史累计播放量排序。这类榜单一两年都不会大改，第一名长期钉在那里（你截图第一条「捡钱的Penny祢的歌单」就是它）。</p>
+    </div>
+    <div class="cell">
+      <div class="n">原因 2 · 翻页</div>
+      <h3>3 页死循环，还只取 8 条</h3>
+      <p>每页 18 条，页面只展示前 8 条；「换一批」按 <code>1 → 2 → 3 → 1</code> 翻。候选总共 24 个，第 4 次点击就回到第一批。</p>
+    </div>
+    <div class="cell">
+      <div class="n">原因 3 · 刷新</div>
+      <h3>首页常驻，只加载一次</h3>
+      <p>Index 里四个一级页只切 <code>visibility</code>，不会重建。<code>aboutToAppear</code> 里的 <code>loaded</code> 守卫一辈子只放行一次，所以用多久都不会再发请求。</p>
+    </div>
+  </div>
+
+  <div class="quote">
+    <b>为什么「退出软件」也没用：</b>滑掉后台再进来确实会重新请求，但请求的还是同一份「历史最热」榜单，返回的内容和上次一模一样 —— 看起来就像没刷新。
+  </div>
+
+  <h2>改前 / 改后</h2>
+  <div class="flow">
+    <div class="row"><span class="tag bad">旧</span><span class="arrow">→</span>
+      <span class="tag">分类热榜第 1 页</span><span class="arrow">取前 8</span>
+      <span class="tag">换一批 = 第 2 页 / 第 3 页</span><span class="arrow">→</span>
+      <span class="tag bad">循环回第 1 页，24 个候选</span>
+    </div>
+    <div class="row"><span class="tag good">新</span><span class="arrow">→</span>
+      <span class="tag">网易「每日推荐」30 条/页</span><span class="arrow">+</span>
+      <span class="tag">并行抓 2 页合并去重</span><span class="arrow">→</span>
+      <span class="tag">60 条候选池 · 按日期洗牌</span>
+    </div>
+    <div class="row"><span class="tag good">换一批</span><span class="arrow">→</span>
+      <span class="tag">池内游标 +8，秒出</span><span class="arrow">→</span>
+      <span class="tag">剩不到两批就后台补货一页（插到下一批位置）</span>
+    </div>
+    <div class="row"><span class="tag good">过期</span><span class="arrow">→</span>
+      <span class="tag">跨天 / 超 6 小时 / 切回首页 / 从后台回来</span><span class="arrow">→</span>
+      <span class="tag">静默重建池，内容整体替换</span>
+    </div>
+    <p class="note">洗牌种子是「当天日期」：同一天内进来顺序稳定，不会每次进首页都跳；第二天整体换一遍，不会每天打开都是同一屏。</p>
+  </div>
+
+  <h2>具体改动</h2>
+  <table>
+    <tr><th>位置</th><th>改动</th><th>解决什么</th></tr>
+    <tr>
+      <td>PlatformApi</td>
+      <td>新增 <code>homeSheets()</code> + <code>wyDailyPlaylists()</code>：网易先走 <code>/api/personalized/playlist</code>（每日推荐，30 条/页，匿名可取），失败或翻到底再回退分类广场；其它平台沿用各自广场分页。</td>
+      <td>内容本身会变，不再是钉死的历史热榜。</td>
+    </tr>
+    <tr>
+      <td>HomePage</td>
+      <td>候选池 + 游标：建池并行抓 2 页去重（网易 60 条），换一批在池内推进，点一下立刻出，不再有「加载中」卡顿。</td>
+      <td>3 页死循环 → 至少 7 批不重复。</td>
+    </tr>
+    <tr>
+      <td>HomePage</td>
+      <td><code>growPool()</code>：池内剩余不足两批时，抓下一页插到「当前这批之后」的位置（20 秒节流，翻到第 8 页后随机回中间取页）。</td>
+      <td>池看完不会原地打转，会持续进新内容。</td>
+    </tr>
+    <tr>
+      <td>HomePage</td>
+      <td>按日期种子洗牌（线性同余），同一天稳定、隔天整体换序。</td>
+      <td>第一名不会再永远是同一个歌单。</td>
+    </tr>
+    <tr>
+      <td>HomePage</td>
+      <td><code>poolValid()</code> / <code>checkStale()</code>：跨天、超 6 小时、换平台都判失效；切回首页 Tab、从后台回前台各检查一次。</td>
+      <td>常驻页面也能「自己想起来」刷新。</td>
+    </tr>
+    <tr>
+      <td>EntryAbility</td>
+      <td>新增 <code>onForeground()</code>，向 AppStorage 写 <code>foregroundAt</code>。</td>
+      <td>人停在首页不动、切后台几小时再回来，也会刷新。</td>
+    </tr>
+    <tr>
+      <td>selfcheck.py</td>
+      <td>新增 Z 组：禁止 <code>sheetPage</code> 回来、必须有 <code>POOL_TTL_MS</code> / <code>poolValid</code> / <code>this.growPool(</code> / <code>homeSheets(</code> / <code>personalized/playlist</code> / 前台信号。</td>
+      <td>防止以后又改回「3 页死循环 + 只加载一次」。</td>
+    </tr>
+  </table>
+
+  <h2>实测（同一时刻连抓 6 批）</h2>
+  <table>
+    <tr><th>批次</th><th>前三条</th></tr>
+    <tr><td>第 1 批</td><td>0.8x哭完了吗 哭完了 · 【欧美翻唱】叫醒耳朵系列 · [一周原创发现] 低苦艾</td></tr>
+    <tr><td>第 2 批</td><td>电音王国 · 荷兰 · 聆听优质的中文说唱</td></tr>
+    <tr><td>第 3 批</td><td>国电新势力 · 本土电子 · 「民谣」姑娘你怂了</td></tr>
+    <tr><td>第 4 批</td><td>『玩游戏』节奏满满 · 试着做个善良的人 · 我爱你 第一句是假的</td></tr>
+    <tr><td>第 5 批</td><td>心事还没开口，歌词先替你 · 想开家茶馆，放首民谣 · 愿还会有人，做个傻子陪你</td></tr>
+    <tr><td>第 6 批</td><td>『纯音』高考&amp;中考丨减压 · 【怀疑耳机坏了系列】 · 日系温柔女声</td></tr>
+  </table>
+  <p class="note">池 48 条（当天去重后），6 批零重复；第 4 批之后已经触发补货，第 7 批开始是新抓进来的内容。</p>
+
+  <h2>留在台面上的风险</h2>
+  <table>
+    <tr><th>项</th><th>说明</th></tr>
+    <tr><td>网易每日推荐是匿名的</td><td>接口返回 <code>hasTaste:false</code>，是按大盘热度重算的公用推荐位，不是「懂你」的个性化；但它每天换，比死榜单强得多。真个性化要登录态，暂不做。</td></tr>
+    <tr><td>其它三个平台仍是广场分页</td><td>酷我 / QQ / 酷狗没有等价的「每日推荐」公开接口。它们靠「池 + 补货 + 洗牌」解决循环问题，但内容新鲜度不如网易。</td></tr>
+    <tr><td>封面偶尔灰块</td><td>截图第一张封面是灰的，属于单张图片加载失败（网易图床偶发），不影响列表；暂未加重试。</td></tr>
+  </table>
+
+  <p class="foot">音栈 v1.0 · 首页推荐歌单 · 2026-11-06</p>
+</div>
+</body>
+</html>

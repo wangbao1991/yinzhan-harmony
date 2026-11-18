@@ -405,7 +405,7 @@ export struct ArtistPage {
 
       Row({ space: 10 }) {
         Row({ space: 6 }) {
-          SymbolGlyph($r('sys.symbol.play_fill')).fontSize(15).fontColor(['#FF191713'])
+          SymbolGlyph($r('sys.symbol.play_fill')).fontSize(FONT.body).fontColor(['#FF191713'])
           Text('播放全部').fontSize(FONT.callout).fontWeight(FontWeight.Medium).fontColor('#FF191713')
         }
         .height(42)

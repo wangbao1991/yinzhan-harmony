@@ -54,20 +54,6 @@ export class Settings {
     Store.get().put(PrefKeys.LIGHT_SENSE, level);
   }
 
-  /**
-   * 流畅优先：关掉底栏实时背景模糊（backgroundEffect）、跟手流光与按压动画。
-   * v1.2.0 起**默认开启**（以流畅为先）；关掉则回到完整玻璃观感。
-   */
-  perfMode(): boolean {
-    return Store.get().getBool(PrefKeys.PERF_MODE, true);
-  }
-
-  setPerfMode(value: boolean): void {
-    Store.get().put(PrefKeys.PERF_MODE, value);
-    // 底栏是常驻一级页组件、不会重建：只落盘不广播的话要杀掉进程才生效。
-    AppStorage.setOrCreate('perfMode', value);
-  }
-
   quality(): string {
     return Store.get().getString(PrefKeys.QUALITY, '320k');
   }

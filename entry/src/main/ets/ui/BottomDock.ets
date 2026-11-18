@@ -19,9 +19,10 @@
  *      └──────┘ └────────────────────────────┘
  *
  * ── 关键：连续跟手，不是「到阈值播一段动画」──
- * 位置/尺寸全部由 p（0=展开, 1=完全收起）线性插值算出来，p 直接取
+ * 位置/尺寸全部由 p（0=展开, 1=完全收起）插值算出来，p 直接取
  * core/UiBar.ets 的 TabBarHider 逐帧进度（手指每滚 1vp 就更新一次，
- * 松手 180ms 吸附）。因此手指动多少它就缩多少，中间不会跳、不会停半截。
+ * 松手后由渲染端 springMotion 弹簧吸附）。因此手指动多少它就缩多少，
+ * 松手则是带粘滞感的弹性归位，中间不会跳、不会停半截。
  *
  * 页签栏内容用两套并存的图层做交叉淡入淡出：三格文字层 opacity = 1-p，
  * 单枚居中图标层 opacity = p。宽度缩到 46 时三格层已被裁掉，只剩居中图标，
@@ -35,6 +36,7 @@ import { Player } from '../core/Player';
 import { CoverRepo } from '../core/CoverRepo';
 import { TabBarHider } from '../core/UiBar';
 import { Cover, IconTap } from './Common';
+import { curves } from '@kit.ArkUI';
 
 /** 一级页签定义。 */
 interface DockTab {
@@ -63,8 +65,6 @@ class DockSize {
   static readonly GAP: number = 6;
   /** 收缩态圆与播放条的间距 */
   static readonly FOLD_GAP: number = 8;
-  /** 跟手流光的横向范围（一根窄光柱，约两个格子的宽度） */
-  static readonly GLOW_W: number = 136;
   /** 页签图标字号：展开态与收缩态共用，改这一个数两边同时变 */
   static readonly ICON: number = 18;
   /** 整条左右留白 */
@@ -85,13 +85,17 @@ export struct BottomDock {
   @StorageProp('isDark') isDark: boolean = false;
   /** 当前一级页（Index.switchTab 写入，横滑也会回写）。 */
   @StorageProp('tabIndex') curTab: number = 0;
-  /** 滚动进度 0~1，TabBarHider 逐帧写入，直接当作收缩插值参数。 */
-  @StorageProp('tabBarProgress') progress: number = 0;
+  /** 滚动进度 0~1，TabBarHider 分段下发（约 40Hz），经 onProgress 补间后驱动几何。 */
+  @StorageProp('tabBarProgress') @Watch('onProgress') progress: number = 0;
+  /**
+   * 渲染真正使用的进度。
+   * 广播值是 1/40 分段跳变的，这里用 60ms 线性补间把台阶接平 ——
+   * 屏幕上是连续的，但 JS 线程不再每帧重跑一遍底栏的 build 与布局。
+   */
+  @State pv: number = 0;
   /** 二级页栈深，>0 时只留播放条。 */
   @StorageProp('navDepth') navDepth: number = 0;
   @StorageProp('bottomSafe') bottomSafe: number = 16;
-  /** 流畅优先（v1.2.0 起默认开）：跳过实时模糊、流光、按压动画，只有实底色。 */
-  @StorageProp('perfMode') perfMode: boolean = true;
   /** 一镜到底共享元素 id（Index 只在转场瞬间写入，平时是空串）。 */
   @StorageProp('playerGeomId') geomId: string = '';
 
@@ -101,18 +105,6 @@ export struct BottomDock {
   @State hasSong: boolean = false;
   /** 实测底栏宽度，用于本地算尺寸（不再依赖系统分配，永不溢出）。 */
   @State dockW: number = 336;
-  /** 横滑时手指的屏幕横坐标（Index 的 PanGesture 广播进来）。 */
-  @StorageProp('swipeX') swipeX: number = -1;
-  /** 1=手指在横滑，0=松手/未滑。 */
-  @StorageProp('swipeOn') @Watch('onSwipeState') swipeOn: number = 0;
-  /**
-   * 按压深度 0..1。
-   * 不是简单的开关：按下后它会在 260ms 内逐渐「充能」到 1，
-   * 所以按住不放会越来越亮，快速扫过只来得及亮一半 —— 手指按得越实，光越深。
-   */
-  @State press: number = 0;
-  /** 充能定时器 */
-  private pressTimer: number = -1;
 
   private player: Player = App.get().player;
   private listener: () => void = (): void => {
@@ -120,11 +112,16 @@ export struct BottomDock {
 
   aboutToAppear(): void {
     this.listener = (): void => {
+      // 播放中 timeUpdate 每秒会走十次 notify，下面几行都是「同值赋值」，
+      // ArkUI 判等后不会重绘；但 AppStorage 写入没有这层豁免，值没变就别碰。
       this.song = this.player.getSong();
       this.playing = this.player.isPlaying();
       this.loading = this.player.isLoading();
+      const had: boolean = this.hasSong;
       this.hasSong = this.player.hasSong();
-      AppStorage.setOrCreate('hasSong', this.hasSong);
+      if (had !== this.hasSong) {
+        AppStorage.setOrCreate('hasSong', this.hasSong);
+      }
     };
     this.player.onChange(this.listener);
     this.listener();
@@ -132,11 +129,39 @@ export struct BottomDock {
 
   aboutToDisappear(): void {
     this.player.offChange(this.listener);
-    this.stopPressTimer();
   }
 
   private p(): Palette {
     return palette(this.isDark);
+  }
+
+  /**
+   * 把分段广播接成连续画面 —— 用可中断弹簧，不用补间。
+   *
+   * 广播端（TabBarHider）按 40Hz + 1/40 分段下发；这里每个新终点都起一段
+   * springMotion：弹簧从当前值与当前速度出发平滑重定目标，段与段之间
+   * 速度连续，屏幕上是「一根连续的弹性运动」，而不是一段段线性台阶。
+   * 插值在渲染线程按原生帧率跑（120Hz 屏就是 120 帧过渡），JS 侧只在
+   * 广播到达时重定一次目标 —— 这同时就是流畅优化的主削减项。
+   *
+   * 弹簧参数：response 0.24（跟手，不拖泥带水）、damping 0.86（临界附近，
+   * 收尾带一丝粘滞感但不明显过冲；几何端 t() 本来就钳在 0~1，过冲无害）。
+   *
+   * 只有「复位」直接到位：目标归零且当前确实处在收起态（切页、进出二级页、
+   * 点圆展开）。这种场景要的是干脆，弹簧反而会看到底栏「慢慢荡回去」。
+   */
+  onProgress(): void {
+    const target: number = this.progress;
+    if (Math.abs(target - this.pv) <= 0.0001) {
+      return;
+    }
+    if (target <= 0.001 && this.pv > 0.2) {
+      this.pv = 0;
+      return;
+    }
+    animateTo({ curve: curves.springMotion(0.24, 0.86) }, (): void => {
+      this.pv = target;
+    });
   }
 
   /** 收缩插值参数：0=完全展开, 1=完全收起。二级页/无歌时恒为 0。 */
@@ -144,7 +169,7 @@ export struct BottomDock {
     if (!this.hasSong || this.navDepth > 0) {
       return 0;
     }
-    return Math.min(1, Math.max(0, this.progress / DockSize.FULL_AT));
+    return Math.min(1, Math.max(0, this.pv / DockSize.FULL_AT));
   }
 
   /**
@@ -170,87 +195,6 @@ export struct BottomDock {
    */
   private tm(): number {
     return Math.max(0, Math.min(1, (this.t() - 0.2) / 0.8));
-  }
-
-  /**
-   * 横滑开始/结束：淡入 90ms，淡出 200ms。
-   * 只动 opacity，不动位置 —— 位置每帧由 swipeX 直接算，不能带补间。
-   */
-  onSwipeState(): void {
-    if (this.swipeOn > 0.5) {
-      this.risePress();
-    } else {
-      this.fallPress();
-    }
-  }
-
-  /**
-   * 按压充能：按下瞬间先亮 55%，之后每 16ms 加一档，300ms 充到 1。
-   * 快速扫过（比如 120ms）停在 0.73，光是偏薄的；
-   * 按住慢慢拖，光就一路亮到最实、也张得最开。这就是「感应按压状态」。
-   */
-  private risePress(): void {
-    // 流畅优先下不跑 16ms 充能定时器：流光层本来就不渲染，press 没有可见效果
-    if (this.perfMode) {
-      return;
-    }
-    if (this.pressTimer >= 0) {
-      return;
-    }
-    // 按下瞬间先给 55%，保证轻扫也看得见；剩下的 45% 靠按住慢慢充
-    this.press = Math.max(this.press, 0.55);
-    this.pressTimer = setInterval((): void => {
-      const next: number = Math.min(1, this.press + 16 / 300);
-      this.press = next;
-      if (next >= 1) {
-        this.stopPressTimer();
-      }
-    }, 16);
-  }
-
-  /** 松手：200ms 内回落到 0，光同时淡出。 */
-  private fallPress(): void {
-    this.stopPressTimer();
-    animateTo({ duration: 200, curve: Curve.Linear }, (): void => {
-      this.press = 0;
-    });
-  }
-
-  private stopPressTimer(): void {
-    if (this.pressTimer >= 0) {
-      clearInterval(this.pressTimer);
-      this.pressTimer = -1;
-    }
-  }
-
-  /** 光柱此刻的实际宽度：按得越实，光晕越散。 */
-  private glowW(): number {
-    return DockSize.GLOW_W * (0.86 + 0.22 * this.press);
-  }
-
-  /**
-   * 高光带左边界（相对所在卡片）。
-   * 直接取手指横坐标减半宽，没有任何平滑：手指在哪，光带中心就在哪。
-   */
-  private glowX(barLeft: number, barW: number): number {
-    const raw: number = this.swipeX >= 0 ? this.swipeX : this.dockW / 2;
-    // 手指超出底栏范围时把中心钳在两头，玻璃柱贴着边停下，不会整段跑出去
-    const x: number = Math.max(barLeft, Math.min(barLeft + barW, raw));
-    return x - barLeft - this.glowW() / 2;
-  }
-
-  /**
-   * 受光面偏转角：手指在左半边时玻璃的高光面往左倒，右边往右倒。
-   * 滑动时整条玻璃的受光方向跟着手指走，是「材质在动」而不是「图层在动」。
-   */
-  private glowTilt(): number {
-    // 流畅优先下不做受光面偏转：那会让渐变 angle 每帧变一次，整层渐变重算
-    if (this.perfMode || this.swipeOn <= 0.5) {
-      return 0;
-    }
-    const c: number = this.dockW / 2;
-    const k: number = Math.max(-1, Math.min(1, (this.swipeX - c) / Math.max(1, c)));
-    return 10 * k;
   }
 
   /** 可用宽度（已扣左右留白）。 */
@@ -318,20 +262,20 @@ export struct BottomDock {
   }
 
   /**
-   * 底栏玻璃（专用，比全局 HdsGlass 更透、光更强）。
+   * 底栏表面（v1.3.0 起定版：实色，无模糊、无流光）。
    *
-   * 「流光」靠两件事叠出来：
-   *   ① 底色只留 20%~30% 不透明 + 背景模糊 —— 背后内容（专辑封面、图片）
-   *      的颜色会透上来，页面一滚，底栏里的颜色就跟着流动；
-   *   ② 150° 斜向受光面，角度随收缩进度转 30° —— 收缩那道手术刀式的变形里，
-   *      高光会顺着胶囊扫过去，不是一张死贴图。
+   * 历史上这里是「液态玻璃」：半透明底 + backgroundEffect 实时背景模糊 +
+   * 跟手流光 + 按压充能。模糊采样的是「组件背后」的内容，底栏背后正是
+   * 滚动中的列表 —— 每一帧都在变，实时模糊每帧重算，是全应用最大的
+   * 掉帧源；流光还要再叠加逐帧渐变与横滑坐标广播。用户最终拍板：
+   * 毛玻璃与流光整体去掉，流畅优先。
    *
-   * 液态磨砂（v1.2.0 材质迭代）：把底色从 60% 降到 30%，模糊改由 backgroundEffect 承担，
-   * 顺带把背后颜色的饱和度拉高（saturation）、整体微提亮（brightness），再用
-   * adaptiveColor 取背后平均色 —— 这才是「玻璃」而不是「半透明塑料」的观感。
-   * 通透版再降一档到 20%/30%：底色只压一点，明暗交给背后内容和模糊。
-   * 性能版（本轮）：去掉 backgroundBlurStyle 兜底、radius 30→22、饱和度/提亮下调——
-   * 滚动时玻璃背后内容每帧都在变，双层实时模糊是掉帧主因，只留 backgroundEffect 一条模糊。
+   * 现在只剩三层纯静态绘制，滚动期间零重算：
+   *   ① 实色底：深色 78% 石墨、浅色 90% 微暖近白（#F6F4EE 贴米色页面，
+   *      纯白会变成一条 253 的白板，截图实测过）；
+   *   ② 150° 斜向受光渐变：固定角度，顶缘一条亮线 + 底缘一点内阴影，
+   *      给栏体体积感，角度不随任何状态变化；
+   *   ③ 0.5vp 发丝边。
    */
   @Builder
   dockGlass(radius: number) {
@@ -340,46 +284,15 @@ export struct BottomDock {
         .width('100%')
         .height('100%')
         .borderRadius(radius)
-        // 两档底色：
-        //  · 玻璃档（把开关关掉才用）：20%/24% 半透明，明暗交给背后内容和模糊；
-        //  · 流畅优先档（默认）：没有模糊后 20% 会「透成塑料」，底色必须显著加实
-        //    —— 深色 78%、浅色 90% 微暖近白，靠实体感撑住形状。
-        // 浅色不用纯白：纸面上压纯白会变成一条 253 的白板（截图实测过），
-        // 用微暖近白（#F6F4EE）贴着米色页面走，实但不刺眼。
-        .backgroundColor(this.isDark
-          ? (this.perfMode ? '#C71A1D24' : '#331A1D24')
-          : (this.perfMode ? '#E6F6F4EE' : '#3DFAF9F5'))
-      // 流畅优先（perfMode）：关掉实时背景模糊，只留上面的半透明底色。
-      // backgroundEffect 采样的是「组件背后」的内容，这里单独叠一层透明模糊列在
-      // 底色之上，视觉与原实现等价（高斯模糊是线性算子，半透明底色是常数，模糊后不变），
-      // 但把它从「必然每帧重算」变成「按开关才存在」——低端机 / 掉帧场景可一键关掉。
-      if (!this.perfMode) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .borderRadius(radius)
-          .backgroundEffect({
-            // 半径 30 → 22：视觉上仍是「糊成色块」，但高斯核面积下降约 46%，
-            // 滚动时的实时采样开销明显变小，这是用观感几乎无损换流畅。
-            radius: 22,
-            saturation: this.isDark ? 1.55 : 1.15,
-            // 深色透上去会发灰，提亮补回来；浅色本身就在纸上，再提就把条子推成纯白，
-            // 所以只给 1.01 —— 保一点体积感，不抢页面。
-            brightness: this.isDark ? 1.06 : 1.01,
-            color: this.isDark ? '#0AFFFFFF' : '#00FFFFFF',
-            adaptiveColor: AdaptiveColor.AVERAGE
-          })
-      }
+        .backgroundColor(this.isDark ? '#C71A1D24' : '#E6F6F4EE')
       Column()
         .width('100%')
         .height('100%')
         .borderRadius(radius)
         .linearGradient({
-          // 基础 150°，收缩时再转 30°；横滑时按手指左右再偏 ±18°
-          // 流畅优先下固定角度：收缩时高光不再跟着转，少一次每帧渐变重算
-          angle: this.perfMode ? 150 : (150 - 30 * this.t() + this.glowTilt()),
+          angle: 150,
           colors: [
-            // 顶缘高光更锐一档：玻璃上沿要有一条亮线，弯起来才有球面感
+            // 顶缘高光：玻璃上沿要有一条亮线，弯起来才有球面感
             [dockAlpha('#FFFFFFFF', 0.46), 0],
             [dockAlpha('#FFFFFFFF', 0.12), 0.24],
             ['#00FFFFFF', 0.56],
@@ -395,51 +308,8 @@ export struct BottomDock {
     }
     .width('100%')
     .height('100%')
-    // 玻璃只是背景，别吃触摸
+    // 背景层，别吃触摸
     .hitTestBehavior(HitTestMode.None)
-  }
-
-  /**
-   * 跟手流光。
-   *
-   * 形态是照参考录屏的像素量出来的，不是凭感觉：
-   *   玻璃底色 RGB(41,44,45)，流光峰值 RGB(188,188,188) ≈ 69% 白；
-   *   横向半宽只有 20vp 左右就衰减到 18%，纵向从栏顶到栏底几乎不衰减。
-   * 也就是说它是一根「竖向光柱」——窄、亮、顶满整条玻璃，不是横向的柔光带。
-   *
-   * 所以这里只做一个横向渐变，纵向恒定：
-   *   · 组件高度就是 100%，永远在框内，不存在超出被裁出现硬边的问题；
-   *   · 纵向不衰减，光柱上下自然被页签栏的胶囊边缘切住，正是参考里的样子；
-   *   · 峰值 66% 白，中心再收窄一档，让中间有「芯」，边缘快速消失。
-   */
-  @Builder
-  glowLayer(barLeft: number, barW: number) {
-    Column()
-      .width(this.glowW())
-      .height('100%')
-      .linearGradient({
-        angle: 90,
-        colors: [
-          // 比之前更散：尾部拖到 ±68vp 才归零，20vp 处还有 30%（原来 18%）
-          ['#00FFFFFF', 0],
-          ['#03FFFFFF', 0.0588],
-          ['#0DFFFFFF', 0.1691],
-          ['#24FFFFFF', 0.2794],
-          ['#4DFFFFFF', 0.353],
-          ['#99FFFFFF', 0.4265],
-          ['#B0FFFFFF', 0.5],
-          ['#99FFFFFF', 0.5735],
-          ['#4DFFFFFF', 0.647],
-          ['#24FFFFFF', 0.7206],
-          ['#0DFFFFFF', 0.8309],
-          ['#03FFFFFF', 0.9412],
-          ['#00FFFFFF', 1]
-        ]
-      })
-      .position({ x: this.glowX(barLeft, barW), y: 0 })
-      // 亮度就是按压深度：轻扫只亮三成，按住不放会一路亮到最实
-      .opacity(this.press)
-      .hitTestBehavior(HitTestMode.None)
   }
 
   // ── 页签栏 ──
@@ -476,11 +346,6 @@ export struct BottomDock {
   tabBar() {
     Stack({ alignContent: Alignment.Start }) {
       this.dockGlass(DockSize.TAB_H / 2 - 0.5)
-      // 流畅优先下不画跟手流光：那是每帧随手指重绘的一整条渐变，纯装饰
-      if (!this.perfMode) {
-        // 高光带叠在玻璃上（收缩成橙色圆时也会被玻璃/橙色挡住一部分，属正常）
-        this.glowLayer(DockSize.SIDE, this.tabW())
-      }
       // 收缩时整块染成选中色：参考里收完之后是一枚橙色实心圆
       Column()
         .width('100%')
@@ -558,6 +423,10 @@ export struct BottomDock {
     .height(DockSize.TAB_H)
     .position({ x: DockSize.SIDE, y: this.tabY() })
     .opacity(0)
+    // 常驻挂载，只切命中开关：以前是 if (t<0.5) 才建/拆这层，
+    // 收缩刚好跨过 0.5 那一帧要新建三个格子，正是「收到底时略顿一下」的来源。
+    // 命中开关是纯属性，切换不建节点，也不会挡住在圆上点击展开。
+    .hitTestBehavior(this.t() < 0.5 ? HitTestMode.Default : HitTestMode.None)
   }
 
   // ── 播放条 ──
@@ -579,12 +448,20 @@ export struct BottomDock {
       .clip(true)
       .borderRadius(DockSize.COVER / 2)
 
+      /**
+       * 歌名/歌手双行区。收起态（tm≥0.5，滚动中的瞬时形态）行为反转：
+       * 歌手行隐藏、歌名放开两行并居中 —— 收起时横向被三键让出的宽度所限，
+       * 单行只剩 3~4 个字，两行才是这 52vp 里信息量的正确用法。
+       * 用 visibility/justifyContent 纯属性切换，不增删节点（滚动中 if 增删
+       * 节点会顶一次布局，tabHit 那次「收到底顿一下」就是前车之鉴）。
+       */
       Column({ space: 1 }) {
         Text(this.song.name.length > 0 ? this.song.name : '暂无播放')
           .fontSize(FONT.callout - 2)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.p().text)
-          .maxLines(1)
+          .maxLines(this.tm() >= 0.5 ? 2 : 1)
+          .textAlign(this.tm() >= 0.5 ? TextAlign.Center : TextAlign.Start)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
         Text(this.song.singer.length > 0 ? this.song.singer : '选一首歌开始')
@@ -593,19 +470,30 @@ export struct BottomDock {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
+          .visibility(this.tm() >= 0.5 ? Visibility.None : Visibility.Visible)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+      .justifyContent(this.tm() >= 0.5 ? FlexAlign.Center : FlexAlign.Start)
 
-      Row({ space: 2 }) {
+      // 三个键之间的间距＝命中区能不能分开：
+      // IconTap 的 responseRegion 固定 48vp（见 Common.ets），热区**不受视觉尺寸约束**。
+      // 以前 space 只有 2，而 20/16 图标的视觉盒是 32/28，两个 48 的热区互相压进去 18vp，
+      // 点在「暂停」右半边会落到「下一首」上 —— 这就是误触的来源，不是错觉。
+      //
+      // 三枚图标统一 18vp（视觉盒 30＝18+6×2），热区收到 44（每侧外扩 7），缝给 14：
+      //   暂停 [-7,37] ｜ 下一首 [37,81] ｜ 队列 [81,125]，两两相切，不重叠一点。
+      // 尺寸必须统一：以前播放 20、后面两个 16，三个键一样重，只有播放看着大一号。
+      Row({ space: 14 }) {
         if (this.loading) {
-          LoadingProgress().width(20).height(20).color(this.p().text2)
+          LoadingProgress().width(18).height(18).color(this.p().text2)
         } else {
           IconTap({
             icon: this.playing ? $r('sys.symbol.pause') : $r('sys.symbol.play_fill'),
-            iconSize: 20,
+            iconSize: 18,
             color: this.p().text,
             paddingSize: 6,
+            minHit: 44,
             label: this.playing ? '暂停' : '播放',
             onTap: (): void => {
               this.player.toggle();
@@ -614,9 +502,10 @@ export struct BottomDock {
         }
         IconTap({
           icon: $r('sys.symbol.forward_end_fill'),
-          iconSize: 16,
+          iconSize: 18,
           color: this.p().text,
           paddingSize: 6,
+          minHit: 44,
           label: '下一首',
           onTap: (): void => {
             this.player.next();
@@ -624,9 +513,10 @@ export struct BottomDock {
         })
         IconTap({
           icon: $r('sys.symbol.list_bullet'),
-          iconSize: 16,
+          iconSize: 18,
           color: this.p().text,
           paddingSize: 6,
+          minHit: 44,
           label: '播放队列',
           onTap: (): void => App.get().openQueue()
         })
@@ -634,7 +524,8 @@ export struct BottomDock {
     }
     .width('100%')
     .height('100%')
-    .padding({ left: 6, right: 8 })
+    // 右边由 8 加到 10：整组再往左让 2vp，离屏幕右缘（系统侧滑返回手势区）远一点
+    .padding({ left: 6, right: 10 })
   }
 
   /**
@@ -650,8 +541,12 @@ export struct BottomDock {
     .width(this.miniW())
     .height(DockSize.MINI_H)
     .borderRadius(DockSize.MINI_H / 2 - 0.5)
-    .position({ x: this.miniX(), y: this.miniY() })
-    .clip(true)
+    // 锚点固定，位移改成 translate：
+    // position 是布局属性，每帧变一次父容器就要重排一次；translate 只是变换，
+    // 不进布局。收缩全程几十帧，这一项省下的就是滚动时的主线程时间。
+    .position({ x: DockSize.SIDE, y: 0 })
+    .translate({ x: this.miniX() - DockSize.SIDE, y: this.miniY() })
+    // 不再 clip：内容按容器宽度布局，本来就不溢出；少一层裁剪就少一次离屏层重建
     // 一镜到底的小形态：与全屏播放页共用同一个 id。
     .geometryTransition(this.geomId)
     .onClick((): void => this.enterPlayer())
@@ -675,10 +570,8 @@ export struct BottomDock {
           this.miniBar()
         }
         this.tabBar()
-        // 命中层压在视觉层之上：展开态三个页签一定点得中
-        if (this.t() < 0.5) {
-          this.tabHit()
-        }
+        // 命中层常驻（命中开关随进度切），不再按 t 增删节点
+        this.tabHit()
       }
     }
     .width('100%')

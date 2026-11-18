@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>音栈 · 我喜欢 / 最近播放的删除</title>
+<style>
+  :root{
+    --bg:#0E1116; --card:#171B22; --line:#252B34; --text:#E8ECF2; --dim:#8B95A5;
+    --brand:#6E5BE8; --danger:#E5484D; --ok:#2FA36B;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);padding:36px 30px 56px;
+       font:14px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  h1{font-size:23px;margin:0 0 6px}
+  h2{font-size:16px;margin:32px 0 12px;padding-left:10px;border-left:3px solid var(--brand)}
+  .sub{color:var(--dim);font-size:13px;margin:0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 20px}
+  code{background:#232A34;border-radius:4px;padding:1px 5px;font-size:12.5px;
+       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#C9D2E0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:500;font-size:12px}
+  .yes{color:#5FD39A}.no{color:#7C8697}.warn{color:#FFB020}
+
+  .stage{display:flex;gap:26px;justify-content:center;flex-wrap:wrap}
+  .phone{width:392px;border-radius:26px;background:#F3F4F8;overflow:hidden;
+         border:1px solid #2B3340;padding:0 0 14px}
+  .head{display:flex;gap:12px;padding:16px 16px 10px;align-items:flex-end}
+  .head .cv{width:64px;height:64px;border-radius:14px;flex:none;
+            background:linear-gradient(150deg,#8E7BF0,#C6B6F7)}
+  .head .tt{flex:1;min-width:0}
+  .head .tt b{display:block;font-size:19px;color:#1B1D23;line-height:1.25}
+  .head .tt i{font-style:normal;font-size:11.5px;color:#8B93A0}
+
+  .acts{display:flex;align-items:center;gap:8px;padding:2px 16px 12px}
+  .btn-play{display:flex;align-items:center;gap:6px;height:36px;padding:0 16px;
+            border-radius:18px;background:var(--brand);color:#fff;font-size:13px}
+  .btn-ghost{display:flex;align-items:center;gap:6px;height:36px;padding:0 14px;
+             border-radius:18px;background:#E9EBF1;color:#2B303A;font-size:13px}
+  .btn-del{width:36px;height:36px;border-radius:18px;background:rgba(229,72,77,.12);
+           display:flex;align-items:center;justify-content:center;margin-left:auto;cursor:pointer}
+  .btn-del svg{width:18px;height:18px;stroke:var(--danger);fill:none;stroke-width:1.9;
+               stroke-linecap:round;stroke-linejoin:round}
+
+  .list{padding:0 8px 8px}
+  .row{position:relative;overflow:visible;border-radius:12px}
+  .row + .row{margin-top:1px}
+  .row-body{position:relative;display:flex;align-items:center;gap:10px;height:54px;
+            padding:0 10px;background:#F3F4F8;z-index:1;
+            transition:transform .3s cubic-bezier(.32,.8,.3,1);cursor:pointer}
+  .row.open .row-body{transform:translateX(-84px)}
+  .row-body .no{width:30px;font-size:11.5px;color:#A6AEBB;text-align:center;flex:none}
+    .row-body .nm{flex:1;min-width:0}
+  .row-body .nm b{display:block;font-size:13.5px;font-weight:500;color:#1B1D23;line-height:1.3;
+                  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row-body .nm i{font-style:normal;font-size:11px;color:#98A0AD}
+  .row-body .more{color:#B4BBC7;font-size:16px;letter-spacing:1px}
+  .row-act{position:absolute;right:0;top:0;bottom:0;width:76px;opacity:0;transition:opacity .18s;
+           display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+           background:var(--danger);color:#fff;font-size:10px;border-radius:12px 4px 4px 12px}
+  .row.open .row-act{opacity:1}
+  .row-act svg{width:16px;height:16px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round}
+
+  .tip{font-size:11.5px;color:#98A0AD;margin:10px 12px 0;text-align:center;line-height:1.7}
+  .tag{display:inline-block;font-size:10.5px;padding:1px 8px;border-radius:20px;margin-left:6px}
+  .tag-f{background:rgba(110,91,232,.14);color:#8F7BF5}
+  .tag-h{background:rgba(47,163,107,.14);color:#4FC08A}
+
+  .dlg{max-width:330px;margin:0 auto;background:#fff;border-radius:18px;padding:20px 18px 14px;
+       box-shadow:0 18px 44px rgba(0,0,0,.35);color:#1B1D23}
+  .dlg b{display:block;font-size:16px;margin-bottom:8px}
+  .dlg p{margin:0 0 16px;font-size:12.5px;color:#5C6470;line-height:1.6}
+  .dlg .ops{display:flex;gap:10px;justify-content:flex-end}
+  .dlg .ops span{font-size:13px;padding:7px 16px;border-radius:16px;background:#EDEFF4;color:#3A404B}
+  .dlg .ops span.d{background:rgba(229,72,77,.12);color:var(--danger);font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>我喜欢 / 最近播放：左滑移除 + 一键清空</h1>
+<p class="sub">两个列表共用同一个详情页。点一下下面列表里的任意一行，看左滑露出什么。</p>
+
+<h2>一、交互</h2>
+<div class="stage">
+
+  <div>
+    <div class="phone">
+      <div class="head">
+        <div class="cv"></div>
+        <div class="tt"><b>我喜欢</b><i>我喜欢的音乐 · 128 首</i></div>
+      </div>
+      <div class="acts">
+        <div class="btn-play">▶ 播放全部</div>
+        <div class="btn-ghost">⇄ 随机</div>
+        <div class="btn-del" title="清空">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg>
+        </div>
+      </div>
+      <div class="list" data-list>
+        <div class="row">
+          <div class="row-act">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 12h8"/></svg>
+            <span>移除</span>
+          </div>
+          <div class="row-body">
+            <span class="no">01</span>
+            <span class="nm"><b>后来的我们</b><i>五月天</i></span><span class="more">⋯</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-act">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 12h8"/></svg>
+            <span>移除</span>
+          </div>
+          <div class="row-body">
+            <span class="no">02</span>
+            <span class="nm"><b>晴天</b><i>周杰伦</i></span><span class="more">⋯</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-act">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 12h8"/></svg>
+            <span>移除</span>
+          </div>
+          <div class="row-body">
+            <span class="no">03</span>
+            <span class="nm"><b>起风了</b><i>买辣椒也用券</i></span><span class="more">⋯</span>
+          </div>
+        </div>
+      </div>
+      <p class="tip">左滑时整行跟着滑出左边缘，右侧露出「移除」<br>移除 = 取消收藏，文件与队列都不动<span class="tag tag-f">favorites</span></p>
+    </div>
+  </div>
+
+  <div>
+    <div class="phone">
+      <div class="head">
+        <div class="cv" style="background:linear-gradient(150deg,#7FC8A6,#BFE6D2)"></div>
+        <div class="tt"><b>最近播放</b><i>最近播放 · 60 首</i></div>
+      </div>
+      <div class="acts">
+        <div class="btn-play">▶ 播放全部</div>
+        <div class="btn-ghost">⇄ 随机</div>
+        <div class="btn-del" title="清空">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg>
+        </div>
+      </div>
+      <div class="list" data-list>
+        <div class="row">
+          <div class="row-act">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 12h8"/></svg>
+            <span>移除</span>
+          </div>
+          <div class="row-body">
+            <span class="no">01</span>
+            <span class="nm"><b>漠河舞厅</b><i>柳爽</i></span><span class="more">⋯</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-act">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 12h8"/></svg>
+            <span>移除</span>
+          </div>
+          <div class="row-body">
+            <span class="no">02</span>
+            <span class="nm"><b>孤勇者</b><i>陈奕迅</i></span><span class="more">⋯</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-act">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M8 12h8"/></svg>
+            <span>移除</span>
+          </div>
+          <div class="row-body">
+            <span class="no">03</span>
+            <span class="nm"><b>这世界那么多人</b><i>莫文蔚</i></span><span class="more">⋯</span>
+          </div>
+        </div>
+      </div>
+      <p class="tip">同一条手势，两个列表两种语义<br>移除 = 删掉这条记录，歌本身照样能播<span class="tag tag-h">history</span></p>
+    </div>
+  </div>
+</div>
+
+<h2>二、四种列表的删除，语义完全不一样</h2>
+<div class="card">
+  <p class="sub" style="margin:0 0 10px;color:var(--dim);font-size:12.5px">
+    它们共用同一个详情页和同一套 <code>swipeAction</code>，所以动作必须按 <code>kind</code> 分发 —— 借用别人的分支，就会悄悄改到别的地方。
+  </p>
+  <table>
+    <tr><th>列表</th><th>左滑</th><th>实际影响</th><th>一键清空</th></tr>
+    <tr><td>我喜欢</td><td>移除</td><td><code>Library.removeFavorite</code>：只改收藏表</td><td class="yes">✓ 确认后</td></tr>
+    <tr><td>最近播放</td><td>移除</td><td><code>Library.removeHistory</code>：只改历史（按「歌名+歌手」键）</td><td class="yes">✓ 确认后</td></tr>
+    <tr><td>本地音乐</td><td>删除</td><td><code>local.remove</code> + 摘掉队列里的那条（文件没了，留着会报错）</td><td class="no">✗ 等于删光导入的文件</td></tr>
+    <tr><td>自建歌单</td><td>移除</td><td><code>removeFromPlaylist</code>：只动歌单，文件不动</td><td class="no">✗ 误删整份歌单的代价太大</td></tr>
+  </table>
+  <p class="tip" style="text-align:left;margin-top:12px">
+    收藏 / 历史这两条路径都<b style="color:#C9D2E0">不碰播放队列</b>：取消收藏不等于不想听，把正在播的那首从队列里抽掉会直接打断当前播放。
+  </p>
+</div>
+
+<h2>三、清空要过确认</h2>
+<div class="stage">
+  <div class="dlg">
+    <b>清空我喜欢</b>
+    <p>将移除 128 首收藏。只清空这个列表，不会删除本地文件，也不影响已下载的歌。</p>
+    <div class="ops"><span>取消</span><span class="d">清空</span></div>
+  </div>
+  <div class="card" style="max-width:430px">
+    <p class="sub" style="margin:0 0 6px"><b style="color:#C9D2E0">为什么清空是图标、不是文字按钮</b></p>
+    <p class="sub" style="margin:0;font-size:12.5px">
+      这一行已经有「播放全部 / 随机 / 下载全部」，392 的屏再塞一个 60 宽的文字胶囊就会换行。
+      破坏性操作靠确认弹窗把关，不靠按钮做得多大。
+    </p>
+    <p class="sub" style="margin:10px 0 0;font-size:12.5px">
+      清空后 <code>songs</code>、封面、计数一起归零，空态补一句「还没有收藏歌曲，在播放页点心形按钮即可」，
+      不会停在一片白屏上让人以为页面坏了。
+    </p>
+  </div>
+</div>
+
+<h2>四、验证</h2>
+<div class="card">
+  <p class="sub" style="margin:0 0 8px;font-size:12.5px">
+    自检 <b>36 项：PASS 34 / WARN 2 / FAIL 0</b>，新增 AH 组五条；四组反向注入全部当场 FAIL：
+  </p>
+  <table>
+    <tr><th>注入</th><th>检出</th></tr>
+    <tr><td><code>canSwipe()</code> 去掉 favorites / history</td><td class="warn">FAIL · 两个列表左滑不出按钮</td></tr>
+    <tr><td>历史左滑落回 <code>removeFromPlaylistOne</code></td><td class="warn">FAIL · 会改到歌单数据</td></tr>
+    <tr><td>清空按钮直连 <code>clearAll()</code></td><td class="warn">FAIL · 弹窗形同虚设</td></tr>
+    <tr><td><code>Library</code> 去掉 <code>removeHistory</code></td><td class="warn">FAIL · 最近播放删不掉单条</td></tr>
+  </table>
+  <p class="sub" style="margin:10px 0 0;font-size:12.5px">
+    <code>BUILD SUCCESSFUL</code> · <code>verify-app success</code> · <code>verifiedPassed = True</code> · <code>com.yinzhan.music / 1 / 1.0</code>
+  </p>
+</div>
+
+<script>
+  document.querySelectorAll('.row-body').forEach(function (body) {
+    body.addEventListener('click', function () {
+      var row = body.parentNode;
+      var wasOpen = row.classList.contains('open');
+      row.parentNode.querySelectorAll('.row').forEach(function (r) { r.classList.remove('open'); });
+      if (!wasOpen) row.classList.add('open');
+    });
+  });
+
+  // 静态截图用：?open=1 直接把两个列表的第一行滑开
+  if (new URLSearchParams(location.search).get('open') === '1') {
+    document.querySelectorAll('[data-list]').forEach(function (l) {
+      l.querySelector('.row').classList.add('open');
+    });
+  }
+</script>
+</body>
+</html>

@@ -249,7 +249,7 @@ struct SectionBlock {
               })
               if (card.badge.length > 0) {
                 Text(card.badge)
-                  .fontSize(9)
+                  .fontSize(FONT.micro)
                   .fontColor('#FFFFFFFF')
                   .backgroundColor('#80000000')
                   .borderRadius(5)
@@ -449,7 +449,7 @@ struct SectionBlock {
               .textAlign(TextAlign.Center)
               .width(84)
             Text(card.subtitle)
-              .fontSize(9)
+              .fontSize(FONT.micro)
               .fontColor(this.p().text3)
               .maxLines(1)
               .textAlign(TextAlign.Center)
@@ -722,7 +722,7 @@ export struct DiscoverPage {
       Row() {
         Row({ space: 6 }) {
           SymbolGlyph($r('sys.symbol.clock'))
-            .fontSize(15)
+            .fontSize(FONT.body)
             .fontColor([this.p().primary])
           Text('官方发现 · 实时更新')
             .fontSize(FONT.caption)

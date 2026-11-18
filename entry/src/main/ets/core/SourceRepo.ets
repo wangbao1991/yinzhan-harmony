@@ -181,7 +181,6 @@ export class SourceRepo {
       listener();
     }
     AppStorage.setOrCreate('sourceCount', this.items.length);
-    AppStorage.setOrCreate('activeSourceName', this.getActive()?.name ?? '');
     // 单独一个版本号：导入同一个脚本、启用/禁用、改名、自检完成这些操作
     // 数量没变，只靠 sourceCount 收不到通知，一级页就会一直停在旧状态。
     // 必须严格递增，不能用 Date.now()：同一批 inited 结算常常落在同一毫秒，

@@ -119,7 +119,7 @@ struct DownloadTaskRow {
         Row() {
           if (this.selected) {
             SymbolGlyph($r('sys.symbol.checkmark'))
-              .fontSize(13)
+              .fontSize(FONT.callout)
               .fontColor(['#FFFFFFFF'])
           }
         }

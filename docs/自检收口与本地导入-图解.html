@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>音栈 · 自检收口与本地导入</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#ffffff; --ink:#1c2130; --sub:#5b6478; --line:#e5e8f0;
+    --brand:#4a5bd6; --brand-soft:#eef0ff; --ok:#0f9d6e; --ok-soft:#e7f7f1;
+    --warn:#d9632f; --warn-soft:#fff0e8; --dim:#8a93a6; --red:#c0392b; --red-soft:#fdecea;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:34px 20px 60px;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:27px;margin:0 0 6px;letter-spacing:.5px}
+  .lead{color:var(--sub);font-size:14px;margin:0 0 22px}
+  .hero{background:linear-gradient(120deg,#4a5bd6,#6b53d8);color:#fff;border-radius:16px;
+    padding:22px 26px;margin-bottom:24px;box-shadow:0 8px 24px rgba(74,91,214,.18)}
+  .hero b{font-size:18px;display:block;margin-bottom:6px}
+  .hero span{font-size:14px;opacity:.94}
+  h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--brand)}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .col{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 17px}
+  .col h3{margin:0 0 10px;font-size:15px}
+  .col ul{margin:0;padding-left:17px;font-size:13px;color:var(--sub)}
+  .col li{margin:7px 0}
+  .col li b{color:var(--ink)}
+  .tag{font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;margin-left:6px}
+  .t-gray{background:#eef0f4;color:var(--sub)} .t-red{background:var(--red-soft);color:var(--red)}
+  .t-green{background:var(--ok-soft);color:var(--ok)} .t-blue{background:var(--brand-soft);color:var(--brand)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;font-size:13px}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f8f9fd;color:var(--sub);font-weight:600;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:600;white-space:nowrap}
+  .bad{border-color:#f2c4b8;background:#fff8f5}
+  .good{border-color:#bfe6d6;background:#f6fdfa}
+  .quote{background:#fff8f5;border-left:4px solid var(--warn);border-radius:0 10px 10px 0;
+    padding:12px 16px;font-size:13px;color:var(--sub);margin:12px 0}
+  .quote b{color:var(--ink)}
+  code{background:#f1f3f9;padding:1px 5px;border-radius:4px;font-size:12px;color:#3a46a8}
+  .foot{margin-top:26px;font-size:12px;color:var(--dim);text-align:center}
+  .ok{color:var(--ok);font-weight:600}
+  .ng{color:var(--red);font-weight:600}
+
+  /* 弹窗示意 */
+  .phone{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin:10px 0}
+  .dlg{max-width:430px;margin:0 auto;background:#fff;border-radius:16px;border:1px solid var(--line);
+    box-shadow:0 12px 30px rgba(28,33,48,.10);overflow:hidden}
+  .dlg .h{padding:18px 20px 6px;font-size:16px;font-weight:700}
+  .dlg .b{padding:0 20px 14px;font-size:13px;color:var(--sub);white-space:pre-line;line-height:1.75}
+  .dlg .f{display:flex;border-top:1px solid var(--line)}
+  .dlg .f div{flex:1;text-align:center;padding:12px;font-size:14px;font-weight:600;color:var(--brand)}
+  .dlg .f div+div{border-left:1px solid var(--line);color:var(--sub);font-weight:500}
+  .mask{background:#eceef6;border-radius:16px;padding:22px 14px;margin-top:12px}
+
+  .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}
+  .step{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12.5px}
+  .step b{color:var(--brand)}
+  .arrow{color:var(--dim);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>自检收口与本地导入</h1>
+  <p class="lead">去掉结论不可靠的「快速体检」，启动自检跑完整自检并在任意页面弹结果；导入明确走本机文件。</p>
+
+  <div class="hero">
+    <b>一句话：自检只剩一个口径；启动自检在后台静默跑完，只回写音源卡片。</b>
+    <span>之前三件事叠在一起：快速体检说「通过」但点歌还是失败；启动自检的结论没人看见；导入失败只报四个字「导入失败」。中间那版做成了弹窗，但弹窗会打断正在听歌的用户，本轮已撤掉。</span>
+  </div>
+
+  <h2>一、为什么砍掉「快速体检」</h2>
+  <div class="grid2">
+    <div class="col bad">
+      <h3>快速体检 <span class="tag t-red">已移除</span></h3>
+      <ul>
+        <li>每源只试<b>第一首</b>匹配平台的基准曲，成功就 <code>break</code></li>
+        <li>只证明「至少有一首能取」，<b>不证明其它平台能取</b></li>
+        <li>超时压到 8 秒，独家源这类要先拉 rconfig 的<b>必然被判死</b></li>
+        <li>和卡片上的「自检」是<b>两套口径</b>，用户对不上</li>
+      </ul>
+    </div>
+    <div class="col good">
+      <h3>现在的两条路径 <span class="tag t-green">同源结论</span></h3>
+      <ul>
+        <li><b>单源「自检」</b>：卡片菜单里，只测这一个源</li>
+        <li><b>「全部自检」</b>：对每个已启用源跑同一套逻辑</li>
+        <li>逐平台试基准曲、超时 12s，<b>成功即停、失败换下一个平台</b></li>
+        <li>跑完给出「可用几个 / 失败几个 / 各自为什么」</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="quote">
+    <b>耗时怎么补回来：</b>完整自检比体检慢，所以并发开到 3，并加了「脚本级错误短路」——
+    报「未注册 request 处理器 / 音源未加载 / 初始化失败」时不再换平台重试。
+    这类错换哪个平台都一样，死源从 3×12s 降到 1×12s。
+  </div>
+
+  <h2>二、启动自检：后台跑，静默收口</h2>
+  <div class="flow">
+    <div class="step">启动 8 秒后 <b>maybeAutoCheck()</b></div>
+    <span class="arrow">→</span>
+    <div class="step"><b>checkAll()</b> 并发 3 跑完整自检</div>
+    <span class="arrow">→</span>
+    <div class="step">结果写回 <b>SourceItem.status / message</b></div>
+    <span class="arrow">→</span>
+    <div class="step">音源页卡片显示状态点与原因</div>
+  </div>
+
+  <div class="grid2" style="margin-top:12px">
+    <div class="col bad">
+      <h3>撤掉的版本 <span class="tag t-red">会打断播放</span></h3>
+      <ul>
+        <li>跑完用 <code>AppStorage</code> 广播，<code>Index</code> 弹 <code>AlertDialog</code></li>
+        <li>自检是后台任务，用户可能正在听歌、正在搜索</li>
+        <li>十几行失败原因糊在屏幕中央，还得手动关掉</li>
+      </ul>
+    </div>
+    <div class="col good">
+      <h3>现在的做法 <span class="tag t-green">静默</span></h3>
+      <ul>
+        <li>跑完只写一行 <code>console.info</code></li>
+        <li>结果回写到每张卡片的<b>状态点、原因、耗时</b></li>
+        <li>想看结论就进音源页，不想看就不打扰</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="quote">
+    <b>为什么不干脆不跑：</b>启动自检的价值是「提前把死源标出来」，让卡片上的状态在用户点歌之前就是准的。
+    它需要存在，但不需要刷存在感——结论放在用户会去看的地方（音源页），而不是砸在他正看的屏幕上。
+  </div>
+
+  <p style="font-size:12.5px;color:var(--dim)">
+    两道闸没变：同一进程只跑一次；距上次不足 30 分钟跳过。启动自检是真实取链，连续重启不该变成连续打后端。
+  </p>
+
+  <h2>三、导入脚本 → 本地导入</h2>
+  <table>
+    <thead><tr><th>项目</th><th>之前</th><th>现在</th></tr></thead>
+    <tbody>
+      <tr><td>按钮文案</td><td>「导入脚本」，和「网络导入」并排</td><td><b>「本地导入」</b>，和「网络导入」语义对齐</td></tr>
+      <tr><td>一次可选</td><td>4 个</td><td><b>20 个</b>，换一批源不用来回点</td></tr>
+      <tr><td>空文件</td><td>当成导入失败</td><td>指出「「xxx.js」是空文件」</td></tr>
+      <tr><td>读取失败</td><td>统一「导入失败」</td><td>指出具体文件 + 原因，并提示<b>「如果它在云盘请先下载到本机」</b></td></tr>
+    </tbody>
+  </table>
+
+  <div class="quote">
+    <b>为什么单独提云盘：</b>系统的文件选择器会把云盘、在线的条目也列出来，
+    但音源脚本必须落盘到应用沙箱才能加载。用户看到文件明明在那儿，点导入却失败，
+    以前只会得到「导入失败」四个字，很容易以为应用坏了。
+  </div>
+
+  <h2>四、这轮守住的四条线</h2>
+  <table>
+    <thead><tr><th>自检项</th><th>判据</th><th>被抓到的退化</th></tr></thead>
+    <tbody>
+      <tr><td>V · 自检收口</td><td>checkAll 返回 CheckSummary；无 <code>full</code> / <code>quick</code> 参数；页面无「快速体检」</td><td>快速模式回潮 / 两套结论</td></tr>
+      <tr><td>V · 静默收口</td><td>启动自检不广播（无 <code>publishCheckReport</code> / <code>sourceCheckReport</code>）；Index 不监听 <code>sourceCheckVersion</code></td><td>弹窗回潮，打断播放</td></tr>
+      <tr><td>X · 本地导入</td><td>文案为「本地导入」且无「导入脚本」残留；走系统选择器；含云盘提示</td><td>文案回退 / 失败原因说不清</td></tr>
+      <tr><td>A · 广播闭环</td><td>补认 <code>AppStorage.get&lt;T&gt;('key')</code> 这种取值读法</td><td>把 sourceCheckReport 误报成冗余广播</td></tr>
+    </tbody>
+  </table>
+
+  <p style="font-size:13.5px;color:var(--sub)">
+    反向验证：把 <code>publishCheckReport</code> 挂回启动自检，V 组立刻报「启动自检又在广播结果，弹窗已被要求移除」；
+    把空态文案改回「导入脚本」，X 组报「页面还残留「导入脚本」文案」。还原后 28 项 PASS 24 / WARN 4 / FAIL 0。
+  </p>
+
+  <h2>五、装上之后怎么用</h2>
+  <div class="grid2">
+    <div class="col">
+      <h3>首次整理源</h3>
+      <ul>
+        <li>先<b>本地导入</b>一批脚本（可多选）</li>
+        <li>点<b>全部自检</b>，等它跑完</li>
+        <li>把失败且原因写「403 / 初始化超时」的源左滑删掉</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3>日常</h3>
+      <ul>
+        <li>打开<b>启动时自动自检</b>，8 秒后后台跑</li>
+        <li>跑完不打扰；进音源页看卡片状态</li>
+        <li>30 分钟内重启不会重复跑，避免打后端</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="foot">音栈 · 第十轮改动 · 自检只有一个结论，结论放在音源页</p>
+</div>
+</body>
+</html>

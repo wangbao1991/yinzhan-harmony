@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>音栈 · 队列面板改成玻璃卡片</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#fff; --ink:#1c2130; --sub:#5b6478; --line:#e5e8f0;
+    --brand:#4a5bd6; --ok:#0f9d6e; --ok-soft:#e7f7f1; --red:#c0392b; --red-soft:#fdecea;
+    --dim:#8a93a6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:34px 20px 60px;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 6px}
+  .lead{color:var(--sub);font-size:14px;margin:0 0 22px}
+  .hero{background:linear-gradient(120deg,#4a5bd6,#6b53d8);color:#fff;border-radius:16px;
+    padding:22px 26px;margin-bottom:24px;box-shadow:0 8px 24px rgba(74,91,214,.18)}
+  .hero b{font-size:18px;display:block;margin-bottom:6px}
+  .hero span{font-size:14px;opacity:.94}
+  h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--brand)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;font-size:13px}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f8f9fd;color:var(--sub);font-weight:600;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:600;white-space:nowrap}
+  code{background:#f1f3f9;padding:1px 5px;border-radius:4px;font-size:12px;color:#3a46a8}
+  .note{font-size:12.5px;color:var(--dim);margin:8px 0 0}
+
+  .stage{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin:16px 0 6px}
+  .cap{font-size:12px;color:var(--sub);text-align:center;margin-bottom:8px}
+  .cap b{font-size:13px;color:var(--ink)}
+  .cap .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:99px;margin-left:5px;vertical-align:1px}
+  .tag.old{background:#eef0f6;color:var(--sub)}
+  .tag.new{background:var(--ok-soft);color:var(--ok)}
+
+  /* 播放页底：封面模糊 */
+  .phone{position:relative;height:520px;border-radius:22px;overflow:hidden;
+    background:
+      radial-gradient(70% 50% at 22% 26%, #c08d63 0%, rgba(192,141,99,0) 62%),
+      radial-gradient(60% 45% at 78% 18%, #6a5d86 0%, rgba(106,93,134,0) 60%),
+      radial-gradient(80% 60% at 60% 78%, #4a5f6e 0%, rgba(74,95,110,0) 65%),
+      linear-gradient(165deg,#3a2c24,#1a1620 62%,#0c0b0e);
+    box-shadow:0 12px 30px rgba(18,16,22,.24)}
+  .phone .blurlayer{position:absolute;inset:-20px;
+    background:
+      radial-gradient(70% 50% at 22% 26%, #c08d63 0%, rgba(192,141,99,0) 62%),
+      radial-gradient(60% 45% at 78% 18%, #6a5d86 0%, rgba(106,93,134,0) 60%),
+      radial-gradient(80% 60% at 60% 78%, #4a5f6e 0%, rgba(74,95,110,0) 65%),
+      linear-gradient(165deg,#3a2c24,#1a1620 62%,#0c0b0e);
+    filter:blur(18px) saturate(1.15);opacity:.9}
+  .lyric{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;
+    justify-content:center;align-items:center;gap:9px;color:#fff;font-size:12px;opacity:.65;
+    text-shadow:0 1px 8px rgba(0,0,0,.6)}
+  .lyric .on{font-weight:700;font-size:15px;opacity:1}
+
+  /* 旧版：贴边纯色卡片 */
+  .old .sheet{position:absolute;left:0;right:0;bottom:0;top:8%;z-index:2;
+    border-radius:18px 18px 0 0;background:#f5f6f9;padding:18px 18px 8px;
+    display:flex;flex-direction:column;gap:6px}
+  /* 新版：悬浮玻璃卡片 */
+  .new .sheet{position:absolute;left:12px;right:12px;bottom:10px;top:9%;z-index:2;
+    border-radius:30px;padding:18px 18px 8px;display:flex;flex-direction:column;gap:6px;
+    background:rgba(255,255,255,.72);
+    backdrop-filter:blur(18px) saturate(1.6);
+    -webkit-backdrop-filter:blur(18px) saturate(1.6);
+    border:1px solid rgba(255,255,255,.9);
+    box-shadow:0 14px 34px rgba(16,19,34,.20), inset 0 1px 0 rgba(255,255,255,.9);
+    overflow:hidden}
+  /* 顶部高光：单层竖向渐变，0~22% 强反光 → 中段透明 → 底部微反 */
+  .new .sheet:before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(180deg,rgba(255,255,255,.58) 0%,rgba(255,255,255,.09) 22%,
+      rgba(255,255,255,0) 60%,rgba(255,255,255,.14) 100%)}
+
+  .hd{position:relative;z-index:1}
+  .hd h4{margin:0;font-size:18px;font-weight:800;letter-spacing:.2px;color:#16181d}
+  .hd .sub{font-size:10px;color:#6e7480;margin-top:2px}
+  .row{position:relative;z-index:1;display:flex;align-items:center;gap:9px;height:44px;font-size:12.5px}
+  .row .n{width:15px;text-align:center;font-size:10px;color:#6e7480}
+  .row .body{flex:1;min-width:0}
+  .row .t{display:block;color:#16181d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .s{display:block;font-size:9.5px;color:#6e7480}
+  .row .x{font-size:11px;color:#6e7480;opacity:.85}
+  .row.on .t{color:#335cff;font-weight:600}
+  .row.on .n{color:#335cff}
+
+  .bars{display:inline-flex;align-items:flex-end;gap:2px;width:15px;justify-content:center}
+  .bars i{display:block;width:2.5px;border-radius:2px;background:#335cff}
+  .bars i:nth-child(1){height:7px}.bars i:nth-child(2){height:13px}.bars i:nth-child(3){height:9px}
+
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:10px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h3{margin:0 0 8px;font-size:14px}
+  .card p{margin:0;font-size:12.8px;color:var(--sub)}
+  .layers{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+  .layer{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px 13px}
+  .layer .idx{font-size:10px;color:var(--dim);letter-spacing:.6px}
+  .layer b{display:block;font-size:13px;margin:2px 0 4px}
+  .layer p{margin:0;font-size:11.5px;color:var(--sub);line-height:1.55}
+  .layer code{font-size:10.5px}
+  .codeblk{background:#1c2130;color:#dfe4f2;border-radius:12px;padding:14px 16px;font-size:12.2px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.75;overflow-x:auto;margin:10px 0 0;
+    white-space:pre}
+  .codeblk .c{color:#7f8aa3}
+  .codeblk .a{color:#8fd3a8}
+  .foot{margin-top:28px;font-size:12px;color:var(--dim);border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>播放队列：从「一块板子」变成「一片玻璃」</h1>
+  <p class="lead">你要的果冻感不是加个透明度就行——它是四层叠出来的：能透出封面的半透明底、打在玻璃上沿的高光、边缘那圈反光、以及散得很开的柔和投影。</p>
+
+  <div class="hero">
+    <b>面板从「贴边铺满」改成「悬浮卡片」：四周留 12vp，圆角 30，底下封面透得出来。</b>
+    <span>播放页本身没动，还是沉浸深色；变的只是这块弹出来的面板 —— 它现在像一片盖在封面上方的厚玻璃，而不是一张贴上去的白纸。</span>
+  </div>
+
+  <div class="stage">
+    <div class="old">
+      <div class="cap"><b>改前</b><span class="tag old">贴边 · 纯色 · 无层次</span></div>
+      <div class="phone">
+        <div class="blurlayer"></div>
+        <div class="lyric">
+          <span>风过梧桐 叶落满肩</span>
+          <span class="on">我把名字 写在夜里</span>
+          <span>等一个人 等到天明</span>
+        </div>
+        <div class="sheet">
+          <div class="hd"><h4>播放队列</h4><div class="sub">共 200 首 · 正在播放第 7 首</div></div>
+          <div class="row"><span class="n">5</span><span class="body"><span class="t">遗失的心跳</span><span class="s">萧亚轩</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">6</span><span class="body"><span class="t">我还想她</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+          <div class="row on"><span class="bars"><i></i><i></i><i></i></span><span class="body"><span class="t">江南</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">8</span><span class="body"><span class="t">童话</span><span class="s">光良</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">9</span><span class="body"><span class="t">心墙</span><span class="s">郭静</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">10</span><span class="body"><span class="t">雨爱</span><span class="s">杨丞琳</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">11</span><span class="body"><span class="t">屋顶</span><span class="s">周杰伦 / 温岚 / 吴宗宪</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">12</span><span class="body"><span class="t">温柔</span><span class="s">五月天</span></span><span class="x">✕</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="new">
+      <div class="cap"><b>改后</b><span class="tag new">悬浮 · 玻璃 · 有折射</span></div>
+      <div class="phone">
+        <div class="blurlayer"></div>
+        <div class="lyric">
+          <span>风过梧桐 叶落满肩</span>
+          <span class="on">我把名字 写在夜里</span>
+          <span>等一个人 等到天明</span>
+        </div>
+        <div class="sheet">
+          <div class="hd"><h4>播放队列</h4><div class="sub">共 200 首 · 正在播放第 7 首</div></div>
+          <div class="row"><span class="n">5</span><span class="body"><span class="t">遗失的心跳</span><span class="s">萧亚轩</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">6</span><span class="body"><span class="t">我还想她</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+          <div class="row on"><span class="bars"><i></i><i></i><i></i></span><span class="body"><span class="t">江南</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">8</span><span class="body"><span class="t">童话</span><span class="s">光良</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">9</span><span class="body"><span class="t">心墙</span><span class="s">郭静</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">10</span><span class="body"><span class="t">雨爱</span><span class="s">杨丞琳</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">11</span><span class="body"><span class="t">屋顶</span><span class="s">周杰伦 / 温岚 / 吴宗宪</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">12</span><span class="body"><span class="t">温柔</span><span class="s">五月天</span></span><span class="x">✕</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">右图能看出四件事：四条边都露出封面（悬浮而不是贴边）；顶部有一条亮带；边缘有一圈细白线；底部有散开的投影。文字仍然是深灰，落在 72% 白上对比足够。</p>
+
+  <h2>四层结构</h2>
+  <div class="layers">
+    <div class="layer">
+      <div class="idx">LAYER 01</div>
+      <b>半透明底</b>
+      <p><code>rgba(255,255,255,.72)</code><br>浅色 72% 白、深色 66% 近黑。太透文字糊，太实就成板子。</p>
+    </div>
+    <div class="layer">
+      <div class="idx">LAYER 02</div>
+      <b>背景模糊</b>
+      <p><code>backdropBlur(18)</code><br>把底下的封面磨砂掉，才叫果冻，而不是「半透明纸」。</p>
+    </div>
+    <div class="layer">
+      <div class="idx">LAYER 03</div>
+      <b>顶部高光</b>
+      <p><code>linearGradient 180°</code><br>0~22% 白 .58 → 中段透明 → 底部 .14 回光。一层渐变做两头。</p>
+    </div>
+    <div class="layer">
+      <div class="idx">LAYER 04</div>
+      <b>亮边 + 柔影</b>
+      <p><code>1px 白 .9</code> + <code>radius 30 / y 14</code><br>白线给边缘折射，投影偏冷才不显脏。</p>
+    </div>
+  </div>
+
+  <h2>代码长什么样</h2>
+  <div class="codeblk"><span class="c">// 外层：只负责描边和投影（这一层不裁剪，否则阴影会被切掉）</span>
+Column() {
+  Stack({ alignContent: Alignment.TopStart }) {
+    <span class="c">// 高光层先画，压在内容下面，不参与点击</span>
+    Column()
+      .width('100%').height('100%')
+      .linearGradient({ angle: 180, colors: this.glassGlint() })
+      .hitTestBehavior(HitTestMode.None)
+
+    <span class="c">// 内容层：标题 + 列表</span>
+    Column({ space: 6 }) { ... }
+      .padding({ left: 18, right: 18, top: 18, bottom: 8 })
+  }
+  .layoutWeight(1)
+  .backgroundColor(this.glassFill())   <span class="c">// 半透明</span>
+  .backdropBlur(18)                    <span class="c">// 磨砂</span>
+  .borderRadius(30).clip(true)
+}
+.padding({ left: 12, right: 12, top: 10, bottom: 10 })  <span class="c">// 悬浮边距</span>
+.borderRadius(30)
+.border({ width: 1, color: this.glassRim() })          <span class="c">// 边缘折射</span>
+.shadow({ radius: 30, color: this.glassShadow(), offsetX: 0, offsetY: 14 })</div>
+
+  <div class="split">
+    <div class="card">
+      <h3>为什么高光要放在内容下面</h3>
+      <p>半透明白压在文字上会把标题洗淡。所以层序是：底色 → 高光 → 内容。高光只作用在空白处和列表的缝隙里，视觉上像「玻璃本身在发光」，而不是「蒙了一层雾」。</p>
+    </div>
+    <div class="card">
+      <h3>为什么 sheet 要设成全透明</h3>
+      <p>卡片四周留了 12vp，这圈边距本来是要露出封面的。如果 sheet 容器自己有实色底，边距就成了一道色框，玻璃感立刻没了。所以播放页里这一处改成 <code>'#00000000'</code>，其它面板仍是实底。</p>
+    </div>
+  </div>
+
+  <h2>改动清单</h2>
+  <table>
+    <tr><th>位置</th><th>改动</th></tr>
+    <tr><td>QueueSheet</td><td>根节点由「贴边 Column + 实色底」改为「外层描边投影 + 内层玻璃 Stack」</td></tr>
+    <tr><td>QueueSheet</td><td>新增 <code>glassFill()</code> / <code>glassGlint()</code> / <code>glassRim()</code> / <code>glassShadow()</code> 四个取色函数，浅色深色各一套</td></tr>
+    <tr><td>QueueSheet</td><td>顶部高光用单层 180° 渐变（0~22% 强反光，60% 透明，100% 微反光），滚动时不会露接缝</td></tr>
+    <tr><td>QueueSheet</td><td>标题字号 19 → 21，副标题行距加 1，跟玻璃卡片的留白比例对上</td></tr>
+    <tr><td>QueueSheet</td><td>List 加 <code>clip(true)</code>，滚到顶/底不把圆角顶穿</td></tr>
+    <tr><td>PlayerPage</td><td>panel 4 的 sheet 底色改为全透明，露出悬浮边距</td></tr>
+  </table>
+
+  <div class="foot">
+    构建：BUILD SUCCESSFUL · com.yinzhan.music / 1 / 1.0 · 自检 31 项 PASS 28 / WARN 3 / FAIL 0（AB 组已改为守住玻璃四件套，反向验证可触发 2 条 FAIL）
+  </div>
+</div>
+</body>
+</html>

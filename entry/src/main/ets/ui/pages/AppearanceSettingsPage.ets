@@ -23,7 +23,6 @@ export struct AppearanceSettingsPage {
   @State themeMode: number = 0;
   @State showTrans: boolean = true;
   @State lyricSize: number = 1;
-  @State perfMode: boolean = false;
   private settings: Settings = Settings.get();
 
   aboutToAppear(): void {
@@ -34,7 +33,6 @@ export struct AppearanceSettingsPage {
     this.themeMode = this.settings.themeMode();
     this.showTrans = this.settings.showTrans();
     this.lyricSize = this.settings.lyricSize();
-    this.perfMode = this.settings.perfMode();
   }
 
   private p(): Palette {
@@ -94,19 +92,7 @@ export struct AppearanceSettingsPage {
 
               // v2.52 墨栈：界面为不反光的纸墨表面，光感档位视觉归一为单一实色，
               // 不再提供玻璃质感选项。lightSense 符号与全站 @StorageProp 订阅保留（兼容回滚）。
-
-              Divider().color(this.p().line).margin({ left: 16, right: 16 })
-
-              SettingSwitchRow({
-                icon: $r('sys.symbol.bolt'),
-                title: '流畅优先',
-                hint: '默认开启：关掉底栏毛玻璃与流光，滚动最顺',
-                value: this.perfMode,
-                onChange: (on: boolean) => {
-                  this.perfMode = on;
-                  this.settings.setPerfMode(on);
-                }
-              })
+              // v1.3.0：底栏毛玻璃与流光整体移除，「流畅优先」开关失去意义，一并撤下。
             }
             .width('100%')
             .borderRadius(RADIUS.lg)

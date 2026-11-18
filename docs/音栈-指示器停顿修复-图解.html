@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>音栈 · 指示器「停顿一下」修复图解</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 28px 56px;
+    background: #F6F7FB; color: #1B1D23;
+    font-family: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 25px; font-weight: 700; margin: 0 0 8px; letter-spacing: -.2px; }
+  .sub { font-size: 13.5px; color: #6B7280; line-height: 1.75; margin: 0 0 26px; }
+  .card {
+    background: #fff; border-radius: 16px; padding: 24px 26px 20px;
+    box-shadow: 0 1px 2px rgba(20,26,40,.04), 0 8px 24px rgba(20,26,40,.05);
+    margin-bottom: 18px; border: 1px solid #EDF0F5;
+  }
+  h2 { font-size: 16px; font-weight: 650; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+  .tag.bad { background: #FDECEA; color: #C0433E; }
+  .tag.good { background: #E8F6EF; color: #23845A; }
+  .tag.plain { background: #EEF1F7; color: #5A6069; }
+  .desc { font-size: 13px; line-height: 1.85; color: #5A6069; margin: 0 0 16px; }
+  .desc b { color: #1B1D23; font-weight: 650; }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11.5px;
+    background: #F2F4F9; border-radius: 4px; padding: 1.5px 5px; color: #3B4A63;
+  }
+  svg { display: block; width: 100%; height: auto; }
+  .legend { display: flex; gap: 26px; margin: 6px 0 0 74px; }
+  .legend span { font-size: 11.5px; color: #5A6069; display: flex; align-items: center; gap: 7px; }
+  .dot { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 4px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #EFF2F7; vertical-align: top; }
+  th { font-size: 11.5px; color: #8C929C; font-weight: 600; letter-spacing: .3px; }
+  td:first-child { white-space: nowrap; color: #3B4A63; font-family: "SF Mono", Menlo, monospace; font-size: 11.5px; }
+  .concl {
+    background: linear-gradient(180deg,#F4F7FF,#FBFCFE); border: 1px solid #E2E9FA;
+    border-radius: 14px; padding: 18px 20px; font-size: 13px; line-height: 1.9; color: #33405C;
+  }
+  .concl b { color: #2B3A5B; }
+  .foot { text-align: center; font-size: 11.5px; color: #A2A9B4; margin-top: 22px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>滑过去为什么会「停一下」</h1>
+  <p class="sub">
+    数据来自你这段 4.4 秒的录屏，逐帧（30fps）量出底栏指示器中心的位置。
+    两次滑动各出现一次完全静止，时长 300ms 和 267ms，之后才突然窜到目标页。
+  </p>
+
+  <div class="card">
+    <h2>位置—时间曲线<span class="tag bad">修复前</span><span class="tag good">修复后</span></h2>
+    <div class="desc">
+      红框是<strong>指示器一动不动</strong>的区间。页面在这段时间里已经在滑了，
+      指示器却停在半路，等页面停稳才补过去——这就是你看到的「停顿的瞬间」。
+    </div>
+    <svg viewBox="0 0 860 400" xmlns="http://www.w3.org/2000/svg">
+      <rect x="198.4" y="62" width="130.7" height="290" fill="#D9534F" opacity="0.07"/><rect x="590.8" y="62" width="117.7" height="290" fill="#D9534F" opacity="0.07"/>
+      <line x1="74" y1="352.0" x2="800" y2="352.0" stroke="#E6E8EF" stroke-width="1"/>
+          <text x="64" y="356.0" font-size="11" fill="#8C929C" text-anchor="end">首页</text>
+          <line x1="74" y1="207.0" x2="800" y2="207.0" stroke="#E6E8EF" stroke-width="1"/>
+          <text x="64" y="211.0" font-size="11" fill="#8C929C" text-anchor="end">发现</text>
+          <line x1="74" y1="62.0" x2="800" y2="62.0" stroke="#E6E8EF" stroke-width="1"/>
+          <text x="64" y="66.0" font-size="11" fill="#8C929C" text-anchor="end">设置</text>
+          <line x1="211.4" y1="62" x2="211.4" y2="352" stroke="#F0F2F7" stroke-width="1"/>
+          <text x="211.4" y="370" font-size="10" fill="#8C929C" text-anchor="middle">1.5s</text>
+          <line x1="407.6" y1="62" x2="407.6" y2="352" stroke="#F0F2F7" stroke-width="1"/>
+          <text x="407.6" y="370" font-size="10" fill="#8C929C" text-anchor="middle">2.0s</text>
+          <line x1="603.8" y1="62" x2="603.8" y2="352" stroke="#F0F2F7" stroke-width="1"/>
+          <text x="603.8" y="370" font-size="10" fill="#8C929C" text-anchor="middle">2.5s</text>
+          <line x1="800.0" y1="62" x2="800.0" y2="352" stroke="#F0F2F7" stroke-width="1"/>
+          <text x="800.0" y="370" font-size="10" fill="#8C929C" text-anchor="middle">3.0s</text>
+      <path d="M 93.6,207.0 L 132.9,205.6 L 145.8,201.5 L 159.2,196.6 L 172.1,188.9 L 185.1,179.2 L 198.4,157.6 L 211.4,157.6 L 316.1,157.6 L 329.1,133.2 L 342.0,100.4 L 355.4,71.1 L 368.3,66.2 L 381.3,64.8 L 394.6,64.8 L 538.2,64.8 L 551.6,66.2 L 564.5,73.9 L 577.5,82.3 L 590.8,93.3 L 603.8,93.3 L 695.2,93.3 L 708.6,101.7 L 721.5,143.6 L 734.5,176.3 L 747.8,194.4 L 760.8,205.6 L 773.7,207.0" fill="none" stroke="#D9534F" stroke-width="2.6"
+            stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>
+      <path d="M 93.6,207.0 L 132.9,205.6 L 145.8,201.5 L 159.2,196.6 L 172.1,188.9 L 185.1,179.2 L 198.4,157.6 L 316.1,64.8 L 538.2,64.8 L 551.6,66.2 L 564.5,73.9 L 577.5,82.3 L 590.8,93.3 L 708.6,207.0" fill="none" stroke="#2E9E6B" stroke-width="2.6"
+            stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="6 4"/>
+      <text x="258" y="262" font-size="10.5" fill="#C0433E" text-anchor="middle">静止 9 帧</text>
+      <text x="634" y="289" font-size="10.5" fill="#C0433E" text-anchor="middle">静止 8 帧</text>
+    </svg>
+    <div class="legend">
+      <span><i class="dot" style="background:#D9534F"></i>修复前：等动画结束才落位</span>
+      <span><i class="dot" style="background:#2E9E6B"></i>修复后：动画开始就起步</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>根因<span class="tag plain">时序</span></h2>
+    <div class="desc">
+      上一版为了消除回弹，把落位改成了 <code>onAnimationEnd</code>。回弹确实没了，但代价是：
+      <b>Swiper 自己播翻页动画的那 300ms 里，指示器没有任何数据源</b>。
+      手指抬起后 <code>onGestureSwipe</code> 就停了，<code>onAnimationEnd</code> 又要等动画跑完，
+      中间这段它只能一动不动。
+    </div>
+    <div class="desc" style="margin-bottom:4px;">
+      而且这不只发生在松手后。<b>Swiper 判定「这一滑要翻页」时会提前启动动画，手还按在屏幕上</b>，
+      所以连「拖动中」都会出现静止——录屏里第一次停顿正是这种情况：手指还在滑，指示器已经停住了。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>修复<span class="tag good">三处</span></h2>
+    <table>
+      <tr><th style="width:150px">位置</th><th>做法</th></tr>
+      <tr>
+        <td>Index.ets<br>onAnimationStart</td>
+        <td>动画<b>开始</b>的这一刻就拿到 <code>targetIndex</code>，立刻把位置设成目标页。
+            指示器和页面同时起步，不再是「页面走完、指示器再补」。</td>
+      </tr>
+      <tr>
+        <td>Shell.ets<br>animateTo</td>
+        <td>指示器改用 <code>animateTo</code> 显式指定这一段走多久，不再用属性动画。
+            属性动画的时长是渲染时读一次，「时长从 0 变 300」和「位置变化」落在同一帧时，
+            框架取哪一次不确定，实际表现就是原地卡住再硬跳。</td>
+      </tr>
+      <tr>
+        <td>Index.ets<br>tabDur</td>
+        <td>新增一个广播：这一段该用多长。拖动中 = 0（零延迟跟手），
+            翻页/归位 = <code>PAGE_ANIM_MS</code>（300ms，与 Swiper 同值，曲线同为 Friction）。
+            底栏不再靠「是否拖动中」自己猜——那个信号在 Swiper 提前翻页时是错的。</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card" style="padding-bottom:22px;">
+    <h2>改动清单</h2>
+    <table>
+      <tr><th style="width:150px">文件</th><th>改动</th></tr>
+      <tr><td>Index.ets</td><td>新增 <code>PAGE_ANIM_MS = 300</code>；<code>.duration(PAGE_ANIM_MS)</code>。</td></tr>
+      <tr><td>Index.ets</td><td>新增 <code>beginRelease(target)</code>，动画开始时接管位置；<code>.onAnimationStart()</code> 调用它。</td></tr>
+      <tr><td>Index.ets</td><td><code>beginDrag()</code> 广播 <code>tabDur = 0</code>；<code>settleSwipe()</code> 广播 <code>tabDur = PAGE_ANIM_MS</code>。</td></tr>
+      <tr><td>Index.ets</td><td><code>onAnimationEnd</code> / 兜底定时器加 <code>dragging</code> 门控：动画被新拖动打断时不抢位置。</td></tr>
+      <tr><td>Shell.ets</td><td>删掉 <code>.animation()</code>，改为本地 <code>pillAt</code> + <code>animateTo(dur)</code>；<code>active()</code> / <code>pillX()</code> 读 <code>pillAt</code>。</td></tr>
+      <tr><td>Index.ets</td><td>清理冗余广播 <code>tabDrag</code>（底栏已不再订阅）。</td></tr>
+    </table>
+  </div>
+
+  <div class="concl">
+    <b>一句话：</b>指示器要跟的是「页面此刻在哪」，不是「页面最后停在哪」。
+    之前只听动画结束，等于把 300ms 的运动过程整个丢掉；现在动画一开始就接管，
+    两段时间轴完全重合，中间没有可停的地方。
+  </div>
+
+  <p class="foot">数据源：SVID_20261106_143646_1.mp4 · 30fps · 131 帧逐帧测量　|　自检 33 项 PASS 31 / WARN 2 / FAIL 0</p>
+</div>
+</body>
+</html>

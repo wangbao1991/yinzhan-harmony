@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>音栈 · 队列边缘那「一圈」到底是谁</title>
+<style>
+  :root{
+    --ink:#12151c; --ink2:#4a505e; --ink3:#7c8494;
+    --line:#e6e9f0; --brand:#2d6cff; --brand2:#7aa2ff;
+    --bg:#f5f7fb; --card:#ffffff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:44px 24px 64px;background:
+      radial-gradient(1200px 520px at 18% -10%, #e8eeff 0%, rgba(232,238,255,0) 62%),
+      radial-gradient(900px 420px at 92% 4%, #f3e9ff 0%, rgba(243,233,255,0) 58%),
+      var(--bg);
+    color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;letter-spacing:.14em;
+    color:var(--brand);background:#e9efff;border:1px solid #d8e2ff;padding:6px 12px;border-radius:999px;font-weight:600}
+  h1{font-size:34px;line-height:1.24;margin:18px 0 10px;letter-spacing:-.4px}
+  h1 em{font-style:normal;background:linear-gradient(100deg,#2d6cff,#8b5cf6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{font-size:15.2px;line-height:1.85;color:var(--ink2);max-width:760px}
+  .lead b{color:var(--ink)}
+
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:30px 0 6px}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 10px 26px -18px rgba(16,24,40,.22)}
+  .box .k{font-size:11.5px;letter-spacing:.1em;color:var(--ink3);font-weight:700}
+  .box h3{margin:8px 0 8px;font-size:15.4px}
+  .box p{margin:0;font-size:13.2px;line-height:1.75;color:var(--ink2)}
+  .box code{background:#f1f4fb;border:1px solid #e2e8f6;border-radius:5px;padding:1px 5px;font-size:11.8px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#33405c}
+
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px 24px 12px;margin-top:22px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 18px 44px -30px rgba(16,24,40,.3)}
+  .stage h2{font-size:17.5px;margin:0 0 4px}
+  .stage .sub{font-size:13px;color:var(--ink3);margin:0 0 18px}
+
+  .four{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:4px}
+  .case{text-align:center}
+  .case .tag{font-size:11.5px;font-weight:700;letter-spacing:.06em;color:var(--ink3);margin-bottom:8px}
+  .case.ok .tag{color:#0a8f52}
+  .case.bad .tag{color:#c2334a}
+  .case .cap{font-size:12.6px;line-height:1.6;color:var(--ink2);margin-top:9px;min-height:34px}
+
+  /* 手机视图 */
+  .ph{position:relative;width:100%;aspect-ratio:9/12.4;border-radius:18px;overflow:hidden;
+      background:#fff;border:1px solid #e3e7f0}
+  .ph .page{position:absolute;inset:0;
+    background:
+      radial-gradient(46% 24% at 20% 10%, #e0a468 0%, rgba(224,164,104,0) 66%),
+      radial-gradient(40% 20% at 82% 5%, #8d76c8 0%, rgba(141,118,200,0) 66%),
+      radial-gradient(56% 30% at 62% 46%, #4b93a4 0%, rgba(75,147,164,0) 70%),
+      radial-gradient(34% 18% at 26% 62%, #b0553f 0%, rgba(176,85,63,0) 66%),
+      linear-gradient(175deg,#3a3229 0%,#221d26 46%,#141119 100%)}
+  .ph .bar{position:absolute;left:22px;top:16px;right:22px;height:10px;border-radius:4px;background:#dfe4ee;opacity:.9}
+  .ph .big{position:absolute;left:22px;top:42px;width:52%;height:16px;border-radius:5px;background:rgba(255,255,255,.82)}
+  .ph .sm{position:absolute;left:22px;top:68px;width:34%;height:8px;border-radius:4px;background:rgba(255,255,255,.42)}
+
+  /* 卡片 */
+  .ph .sheet{position:absolute;left:0;right:0;bottom:0;top:13%;border-radius:18px 18px 0 0;
+    background:rgba(255,255,255,.50);
+    backdrop-filter:blur(34px) saturate(1.4);-webkit-backdrop-filter:blur(34px) saturate(1.4);
+    padding:22px 20px 0}
+  .ph .sheet h4{margin:0 0 4px;font-size:19px;letter-spacing:-.2px;color:#12151c}
+  .ph .sheet .s{font-size:11.5px;color:#6b7287;margin-bottom:14px}
+  .row{display:flex;align-items:center;gap:10px;height:44px}
+  .row .n{font-size:11px;color:#8b93a5;width:16px;text-align:center;flex:none}
+  .row .t{font-size:14px;color:#16181d;line-height:1.2}
+  .row .g{font-size:10.5px;color:#7b8394}
+  .row .x{margin-left:auto;font-size:15px;color:#9aa2b2;flex:none}
+  .row.cur .t{color:#2d6cff}
+
+  /* 变形：三种「一圈」 */
+  .bad1 .sheet{box-shadow:inset 0 0 0 2.5px #ffffff, 0 12px 30px rgba(0,0,0,.34)}
+  .bad2 .sheet{background:
+      linear-gradient(180deg, rgba(255,255,255,.80) 0%, rgba(255,255,255,.10) 26%, rgba(255,255,255,0) 64%, rgba(255,255,255,.34) 100%),
+      rgba(255,255,255,.50);
+    box-shadow:0 10px 26px rgba(12,18,32,.18)}
+  .bad3 .veil{position:absolute;inset:0;background:rgba(0,0,0,.20)}
+  .bad3 .sheet{left:12px;right:12px;border-radius:18px;top:16%;box-shadow:0 10px 26px rgba(12,18,32,.18)}
+  .good .sheet{box-shadow:0 10px 26px rgba(12,18,32,.18)}
+  .good .hinge{position:absolute;left:14px;right:14px;top:13.4%;height:1px;background:transparent}
+
+  .note{margin-top:16px;font-size:13.4px;line-height:1.85;color:var(--ink2)}
+  .note b{color:var(--ink)}
+  .codeblk{background:#1c2130;color:#dfe4f2;border-radius:12px;padding:14px 16px;font-size:12.2px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.75;white-space:pre;overflow-x:auto;margin:14px 0 0}
+  .codeblk .c{color:#7c88a6}
+  .codeblk .k{color:#ffb86b}
+  .codeblk .d{color:#7ee0a8}
+
+
+  .cases{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px}
+  .case{background:#fbfcfe;border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px}
+  .case .tag{font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--ink3);margin-bottom:10px}
+  .case.ok .tag{color:#0a8f52}
+  .case.bad .tag{color:#c2334a}
+  .strip{display:flex;height:86px;border-radius:10px;overflow:hidden;border:1px solid #e3e7f0}
+  .seg{height:100%}
+  .seg.page{background:linear-gradient(180deg,#c9cfdb,#bac1cf)}
+  .seg.card{flex:1;background:linear-gradient(180deg,#eff1f5,#e9ecf1)}
+  .vals{margin-top:9px;font-size:11.6px;color:var(--ink3);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .vals b{color:var(--ink2)}
+  .cap{margin-top:6px;font-size:12.2px;line-height:1.6;color:var(--ink2)}
+
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{font-size:11.6px;letter-spacing:.08em;color:var(--ink3);font-weight:700}
+  td code{background:#f1f4fb;border:1px solid #e2e8f6;border-radius:5px;padding:1px 5px;font-size:11.6px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .foot{margin-top:26px;font-size:12.2px;color:var(--ink3);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="eyebrow">音栈 · UI 复盘</span>
+  <h1>边缘那「一圈」<em>不是同一条线</em></h1>
+  <p class="lead">
+    上一轮确实删掉了 1px 描边，但看起来还是有一圈 —— 因为<b>「一圈」有三个不同的来源</b>，
+    删掉其中一个，另外两个还在。这次把三个都拆开看，最后一次清干净。
+  </p>
+
+  <div class="grid">
+    <div class="box">
+      <div class="k">来源 01</div>
+      <h3>1px 亮边描边</h3>
+      <p><code>border({width:1,color:'#FFFFFF'})</code><br>浅色背景上就是一条白框。<b>上一轮已删。</b></p>
+    </div>
+    <div class="box">
+      <div class="k">来源 02</div>
+      <h3>顶部高光渐变</h3>
+      <p>第一行叠 66% 白，圆角裁完沿上沿拉出一条<b>亮带</b>；底部回光再来一条，合起来也像一圈。</p>
+    </div>
+    <div class="box">
+      <div class="k">来源 03</div>
+      <h3>左右缩进 + 压暗遮罩</h3>
+      <p>卡片左右留 12vp，外面那条缝被 14% 遮罩压暗，白卡外侧就多出<b>一圈灰框</b>——这是你现在看到的那圈。</p>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>把边缘横着切开，放大看</h2>
+    <p class="sub">从左到右是「页面 → 边缘 → 卡片」。正常只该有<b>一级台阶</b>；多出来的那一级，就是你看到的那圈。</p>
+
+    <div class="cases">
+      <div class="case bad">
+        <div class="tag">① 白描边</div>
+        <div class="strip">
+          <div class="seg page" style="width:42%"></div>
+          <div class="seg" style="width:5%;background:#ffffff"></div>
+          <div class="seg card"></div>
+        </div>
+        <div class="vals">页面 <b>205</b> ／ 描边 <b>255</b> ／ 卡片 <b>248</b></div>
+        <div class="cap">中间那段比两侧都亮 —— 一条画出来的白线</div>
+      </div>
+
+      <div class="case bad">
+        <div class="tag">② 顶部高光带</div>
+        <div class="strip">
+          <div class="seg page" style="width:42%"></div>
+          <div class="seg" style="width:22%;background:linear-gradient(90deg,#ffffff 0%,#f7f8fa 45%,#eff1f5 100%)"></div>
+          <div class="seg card"></div>
+        </div>
+        <div class="vals">页面 <b>205</b> ／ 亮带 <b>255→248</b></div>
+        <div class="cap">不是线，是一段「更白的渐变」，圆角裁完就成亮边</div>
+      </div>
+
+      <div class="case bad">
+        <div class="tag">③ 压暗的缝（你现在看到的）</div>
+        <div class="strip">
+          <div class="seg page" style="width:42%"></div>
+          <div class="seg" style="width:16%;background:linear-gradient(90deg,#a9b1bf,#b4bcc9)"></div>
+          <div class="seg card"></div>
+        </div>
+        <div class="vals">页面 <b>205</b> ／ 缝 <b>188</b> ／ 卡片 <b>248</b></div>
+        <div class="cap">卡片缩进留出的缝被遮罩压暗 —— 白卡外侧一圈灰框</div>
+      </div>
+
+      <div class="case ok">
+        <div class="tag">④ 现在</div>
+        <div class="strip">
+          <div class="seg page" style="width:44%"></div>
+          <div class="seg card"></div>
+        </div>
+        <div class="vals">页面 <b>205</b> ／ 卡片 <b>248</b></div>
+        <div class="cap">一级台阶，边界靠明暗差；四角同半径，上下同宽留缝</div>
+      </div>
+    </div>
+
+    <p class="note">
+      <b>怎么验</b>：把截图放大，沿边缘取一条扫描线。出现「页面 → 中间色 → 卡片」的
+      <b>三级台阶</b>，说明有一层描边/高光/压暗夹在中间；只有「页面 → 卡片」的二级台阶，
+      才是纯粹的卡片边界。你这次的截图正好是 <b>205 → 243 → 248</b>，
+      中间那级 205 就是遮罩，所以问题不在描边 —— 描边上一轮确实删了。
+    </p>
+  </div>
+
+  <div class="stage">
+    <h2>这次的改动</h2>
+    <p class="sub">三个文件，一处一项，删的全是「多出来的那一层」。</p>
+    <table>
+      <thead><tr><th>位置</th><th>改动</th><th>去掉的东西</th></tr></thead>
+      <tbody>
+        <tr><td><code>QueueSheet</code></td><td>删掉整层 <code>linearGradient</code> 高光节点与 <code>glassGlint()</code></td><td>上沿亮带、下沿回光</td></tr>
+        <tr><td><code>QueueSheet</code></td><td>外层 <code>padding</code> 由 <code>12/12/10/10</code> 改为 <code>top:8</code>，卡片通栏</td><td>左右那条被压暗的缝</td></tr>
+        <tr><td><code>QueueSheet</code></td><td>四角统一 <code>28</code>，上下各留 <code>8vp</code>，投影 <code>radius 30 / offsetY 10</code></td><td>四个残缺弧、上沿灰边、底部直角切边</td></tr>
+        <tr><td><code>QueueOverlay</code></td><td>遮罩层去掉 <code>backgroundColor</code>，只保留点击热区</td><td>卡片外侧的灰框</td></tr>
+        <tr><td><code>selfcheck.py</code></td><td>AB 组新增三条反向规则</td><td>防止以后再被加回来</td></tr>
+      </tbody>
+    </table>
+
+    <div class="codeblk"><span class="c">// 现在整块卡片就这三行负责「看起来是玻璃」</span>
+.backgroundColor(this.glassFill())   <span class="c">// 50% 白，透出底下的封面</span>
+.backdropBlur(<span class="k">34</span>)                   <span class="c">// 磨砂，不是半透明纸</span>
+.shadow({ radius: <span class="k">30</span>, offsetY: <span class="k">10</span>, ... }) <span class="c">// 只往下压，不往上扩</span>
+
+<span class="c">// 曾经多出来的三行，全部删除</span>
+<span class="d">- .border({ width: 1, color: '#FFFFFF' })</span>
+<span class="d">- .linearGradient({ angle: 180, colors: this.glassGlint() })</span>
+<span class="d">- .padding({ left: 12, right: 12, ... })</span></div>
+  </div>
+
+  <div class="stage">
+    <h2>代价与边界</h2>
+    <p class="sub">说清楚这次换掉了什么，避免下次又当成 bug 提。</p>
+    <p class="note" style="margin-top:0">
+      <b>去掉了页面压暗</b>：那层 14% 黑只覆盖在卡片外侧，是灰框的直接来源，所以一并清零。
+      打开队列时背景不再变暗，卡片靠投影浮起来。如果你更希望「背景暗一点、面板更聚焦」，
+      那圈灰框就会回来 —— 这两件事在同一个几何关系下无法同时成立，得你挑一个。
+      <br><br>
+      <b>还是会有边界</b>：玻璃叠在任何背景上都有明暗差，那不是描边。
+      能保证的是：不会再有「画出来的一根线」。
+    </p>
+  </div>
+
+  <p class="foot">音栈 v1.0 · 队列面板边缘清理 · 构建与验签均通过（com.yinzhan.music / 1 / 1.0）</p>
+</div>
+</body>
+</html>

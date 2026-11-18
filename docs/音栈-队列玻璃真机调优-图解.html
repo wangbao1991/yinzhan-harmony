@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>音栈 · 队列玻璃为什么在真机上变白板</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#fff; --ink:#1c2130; --sub:#5b6478; --line:#e5e8f0;
+    --brand:#4a5bd6; --ok:#0f9d6e; --ok-soft:#e7f7f1; --red:#c0392b; --red-soft:#fdecea;
+    --dim:#8a93a6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:34px 20px 60px;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 6px}
+  .lead{color:var(--sub);font-size:14px;margin:0 0 22px}
+  .hero{background:linear-gradient(120deg,#4a5bd6,#6b53d8);color:#fff;border-radius:16px;
+    padding:22px 26px;margin-bottom:24px;box-shadow:0 8px 24px rgba(74,91,214,.18)}
+  .hero b{font-size:18px;display:block;margin-bottom:6px}
+  .hero span{font-size:14px;opacity:.94}
+  h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--brand)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;font-size:13px}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f8f9fd;color:var(--sub);font-weight:600;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:600;white-space:nowrap}
+  code{background:#f1f3f9;padding:1px 5px;border-radius:4px;font-size:12px;color:#3a46a8}
+  .note{font-size:12.5px;color:var(--dim);margin:8px 0 0}
+  .stage{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin:16px 0 6px}
+  .cap{font-size:12px;color:var(--sub);text-align:center;margin-bottom:8px}
+  .cap b{font-size:13px;color:var(--ink)}
+  .cap .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:99px;margin-left:5px;vertical-align:1px}
+  .tag.bad{background:var(--red-soft);color:var(--red)}
+  .tag.good{background:var(--ok-soft);color:var(--ok)}
+
+  .phone{position:relative;height:540px;border-radius:22px;overflow:hidden;
+    background:
+      radial-gradient(70% 50% at 22% 26%, #c08d63 0%, rgba(192,141,99,0) 62%),
+      radial-gradient(60% 45% at 78% 18%, #6a5d86 0%, rgba(106,93,134,0) 60%),
+      radial-gradient(80% 60% at 60% 78%, #4a5f6e 0%, rgba(74,95,110,0) 65%),
+      linear-gradient(165deg,#3a2c24,#1a1620 62%,#0c0b0e);
+    box-shadow:0 12px 30px rgba(18,16,22,.24)}
+  .phone .blurlayer{position:absolute;inset:-20px;
+    background:
+      radial-gradient(70% 50% at 22% 26%, #c08d63 0%, rgba(192,141,99,0) 62%),
+      radial-gradient(60% 45% at 78% 18%, #6a5d86 0%, rgba(106,93,134,0) 60%),
+      radial-gradient(80% 60% at 60% 78%, #4a5f6e 0%, rgba(74,95,110,0) 65%),
+      linear-gradient(165deg,#3a2c24,#1a1620 62%,#0c0b0e);
+    filter:blur(18px) saturate(1.15)}
+  .phone .veil{position:absolute;inset:0;background:rgba(0,0,0,.22)}
+  .lyric{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-start;
+    align-items:center;gap:8px;padding-top:60px;color:#fff;font-size:12px;opacity:.55;
+    text-shadow:0 1px 8px rgba(0,0,0,.6)}
+  .lyric .on{font-size:15px;font-weight:700;opacity:1}
+
+  /* 真机现状：bindSheet 白底 + 72% 白卡 = 纯白 */
+  .bad .sheet{position:absolute;left:12px;right:12px;top:10%;bottom:8px;
+    border-radius:30px;background:#ffffff;padding:18px 18px 8px;
+    display:flex;flex-direction:column;gap:5px;
+    box-shadow:0 2px 6px rgba(0,0,0,.05)}
+  /* 改后：自绘浮层，玻璃透得出来 */
+  .good .sheet{position:absolute;left:12px;right:12px;top:14%;bottom:10px;
+    border-radius:30px;padding:18px 18px 8px;display:flex;flex-direction:column;gap:5px;
+    background:rgba(255,255,255,.62);
+    backdrop-filter:blur(18px) saturate(1.5);
+    -webkit-backdrop-filter:blur(18px) saturate(1.5);
+    border:1px solid rgba(255,255,255,.9);
+    box-shadow:0 16px 40px rgba(8,10,18,.34), inset 0 1px 0 rgba(255,255,255,.85);
+    overflow:hidden}
+  .good .sheet:before{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(180deg,rgba(255,255,255,.78) 0%,rgba(255,255,255,.10) 22%,
+      rgba(255,255,255,0) 60%,rgba(255,255,255,.20) 100%)}
+
+  .hd{position:relative;z-index:1}
+  .hd h4{margin:0;font-size:19px;font-weight:800;color:#16181d}
+  .hd .sub{font-size:10px;color:#6e7480;margin-top:2px}
+  .row{position:relative;z-index:1;display:flex;align-items:center;gap:9px;height:46px;font-size:12.5px}
+  .row .n{width:15px;text-align:center;font-size:10px;color:#6e7480}
+  .row .body{flex:1;min-width:0}
+  .row .t{display:block;color:#16181d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .s{display:block;font-size:9.5px;color:#6e7480}
+  .row .x{font-size:11px;color:#6e7480;opacity:.85}
+  .row.on .t{color:#335cff;font-weight:600}
+  .bars{display:inline-flex;align-items:flex-end;gap:2px;width:15px;justify-content:center}
+  .bars i{display:block;width:2.5px;border-radius:2px;background:#335cff}
+  .bars i:nth-child(1){height:7px}.bars i:nth-child(2){height:13px}.bars i:nth-child(3){height:9px}
+
+  .diag{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:12px}
+  .diag .item{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 15px}
+  .diag b{display:block;font-size:13px;margin-bottom:4px}
+  .diag p{margin:0;font-size:12px;color:var(--sub);line-height:1.6}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h3{margin:0 0 8px;font-size:14px}
+  .card p{margin:0;font-size:12.8px;color:var(--sub)}
+  .codeblk{background:#1c2130;color:#dfe4f2;border-radius:12px;padding:14px 16px;font-size:12.2px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.75;overflow-x:auto;margin:10px 0 0;
+    white-space:pre}
+  .codeblk .c{color:#7f8aa3}
+  .codeblk .r{color:#f3a1a1}
+  .codeblk .a{color:#8fd3a8}
+  .foot{margin-top:28px;font-size:12px;color:var(--dim);border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>真机上为什么是白板：玻璃叠在了白底上</h1>
+  <p class="lead">截图里那块面板几乎是纯白，看不出磨砂、高光和阴影——不是参数没调好，是它背后根本没有东西可透。这一版把面板从 <code>bindSheet</code> 里搬出来自己画。</p>
+
+  <div class="hero">
+    <b>根因：<code>bindSheet</code> 的容器自带一层不透明白底，<code>backgroundColor: '#00000000'</code> 在这版 SDK 上不生效。</b>
+    <span>62%~72% 的白玻璃叠在白底上，结果就是 100% 白；<code>backdropBlur</code> 模糊的是一张白纸；投影也落在白底上，看不出层次。四层结构全都白做。</span>
+  </div>
+
+  <div class="stage">
+    <div class="bad">
+      <div class="cap"><b>真机现状</b><span class="tag bad">白板 · 无透光 · 无阴影</span></div>
+      <div class="phone">
+        <div class="blurlayer"></div>
+        <div class="veil"></div>
+        <div class="lyric"><span>风过梧桐 叶落满肩</span><span class="on">我把名字 写在夜里</span></div>
+        <div class="sheet">
+          <div class="hd"><h4>播放队列</h4><div class="sub">共 200 首 · 正在播放第 9 首</div></div>
+          <div class="row"><span class="n">7</span><span class="body"><span class="t">江南</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">8</span><span class="body"><span class="t">童话</span><span class="s">光良</span></span><span class="x">✕</span></div>
+          <div class="row on"><span class="bars"><i></i><i></i><i></i></span><span class="body"><span class="t">心墙</span><span class="s">郭静</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">10</span><span class="body"><span class="t">雨爱</span><span class="s">杨丞琳</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">11</span><span class="body"><span class="t">屋顶</span><span class="s">周杰伦 / 温岚 / 吴宗宪</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">12</span><span class="body"><span class="t">温柔</span><span class="s">五月天</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">13</span><span class="body"><span class="t">宁夏</span><span class="s">梁静茹</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">14</span><span class="body"><span class="t">倒带</span><span class="s">蔡依林</span></span><span class="x">✕</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="good">
+      <div class="cap"><b>改后</b><span class="tag good">自绘浮层 · 真玻璃</span></div>
+      <div class="phone">
+        <div class="blurlayer"></div>
+        <div class="veil"></div>
+        <div class="lyric"><span>风过梧桐 叶落满肩</span><span class="on">我把名字 写在夜里</span></div>
+        <div class="sheet">
+          <div class="hd"><h4>播放队列</h4><div class="sub">共 200 首 · 正在播放第 9 首</div></div>
+          <div class="row"><span class="n">7</span><span class="body"><span class="t">江南</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">8</span><span class="body"><span class="t">童话</span><span class="s">光良</span></span><span class="x">✕</span></div>
+          <div class="row on"><span class="bars"><i></i><i></i><i></i></span><span class="body"><span class="t">心墙</span><span class="s">郭静</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">10</span><span class="body"><span class="t">雨爱</span><span class="s">杨丞琳</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">11</span><span class="body"><span class="t">屋顶</span><span class="s">周杰伦 / 温岚 / 吴宗宪</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">12</span><span class="body"><span class="t">温柔</span><span class="s">五月天</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">13</span><span class="body"><span class="t">宁夏</span><span class="s">梁静茹</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">14</span><span class="body"><span class="t">倒带</span><span class="s">蔡依林</span></span><span class="x">✕</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">右边能看到封面从玻璃里透出来的暖色和冷色、顶部一条亮带、边缘一圈细白线，以及落在封面上的深投影。左边四条边是干净的白，没有一处透光——这就是「背后是白纸」的样子。</p>
+
+  <h2>三个诊断</h2>
+  <div class="diag">
+    <div class="item">
+      <b>① 容器白底</b>
+      <p>sheet 的背景设全透明无效，面板实际叠在系统白底上，62% 白 → 纯白。</p>
+    </div>
+    <div class="item">
+      <b>② 模糊没有对象</b>
+      <p><code>backdropBlur</code> 模糊的是 sheet 自己的白底，等于没做磨砂。</p>
+    </div>
+    <div class="item">
+      <b>③ 阴影被吃掉</b>
+      <p>投影画在白底上，与白卡同色系，几乎不可见，卡片就「贴」在屏幕上。</p>
+    </div>
+  </div>
+
+  <h2>改法：把它从 sheet 里搬出来</h2>
+  <p class="note" style="margin-bottom:0">播放页根节点本来就是 Stack，直接在它最上层加一个自绘浮层：压暗遮罩 + 玻璃卡片。这样卡片背后就是真实的封面，四层结构才成立。</p>
+  <div class="codeblk"><span class="c">// PlayerPage 根 Stack 末尾</span>
+if (this.panel === 4) {
+  this.queueOverlay()
+}
+
+<span class="c">// 浮层：遮罩 + 卡片，只有两层</span>
+Stack({ alignContent: Alignment.Bottom }) {
+  Column()
+    .backgroundColor(<span class="r">withAlpha('#000000', 0.22)</span>)   <span class="c">// 压暗，点一下收</span>
+    .onClick(() => this.closeQueue())
+
+  QueueSheet({ onClose: () => this.closeQueue() })
+    .width('100%')
+    .height(<span class="a">'86%'</span>)                                <span class="c">// 顶部露出封面</span>
+    .padding({ bottom: this.bottomSafe })
+    .transition(TransitionEffect.OPACITY
+      .combine(TransitionEffect.translate({ y: 90 }))
+      .combine(TransitionEffect.scale({ x: 0.97, y: 0.97 })))
+}
+
+<span class="c">// bindSheet 从此只管音质 / 更多 / 歌词搜索 / 失败面板</span>
+.bindSheet(this.panel &gt; 0 <span class="a">&amp;&amp; this.panel !== 4</span>, this.panelContent(), { ... })</div>
+
+  <h2>顺带调的两个数</h2>
+  <table>
+    <tr><th>项</th><th>改前</th><th>改后</th><th>为什么</th></tr>
+    <tr><td>玻璃填充</td><td>白 72%</td><td>白 62%</td><td>72% 叠深色封面已接近不透明；降到 62% 后封面明暗能透出来，高光那圈白才有对比</td></tr>
+    <tr><td>顶部高光</td><td>白 58%</td><td>白 78%</td><td>填充变淡后，高光需要更亮才「打」得出来；顶部叠出来约 92% 白，形成一条亮带</td></tr>
+    <tr><td>底部回光</td><td>白 14%</td><td>白 20%</td><td>下沿有反光，玻璃才有厚度，不是一张纸</td></tr>
+  </table>
+  <p class="note">填充值不能一直往下压：62% 白配 <code>#16181D</code> 正文约 6.5:1，再淡就掉到 4.5:1 以下。自检里把区间锁在 55%~75%，越界直接 FAIL。</p>
+
+  <div class="split">
+    <div class="card">
+      <h3>入场动画</h3>
+      <p>原来 sheet 自带升起动画，自绘要自己给：<code>animateTo 260ms FastOutSlowIn</code> 包住 <code>panel = 4</code>，卡片从下方 90vp 上浮 + 0.97 缩放 + 淡入；关闭 200ms 反向播放。</p>
+    </div>
+    <div class="card">
+      <h3>已知缺口</h3>
+      <p>自绘浮层不接系统返回手势，现在按返回会直接收起播放页。下一步若有需要，在 <code>Index</code> 的 <code>onBackPress</code> 里判断 <code>panel === 4</code> 先关队列。</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    构建：BUILD SUCCESSFUL · com.yinzhan.music / 1 / 1.0 · 自检 30 项 PASS 28 / WARN 2 / FAIL 0（AB 组已改为守住「自绘浮层 + 玻璃四件套 + 填充区间」，反向验证可触发 FAIL）
+  </div>
+</div>
+</body>
+</html>

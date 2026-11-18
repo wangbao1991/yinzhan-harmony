@@ -514,13 +514,28 @@ export class Player {
   }
 
   play(): void {
-    if (this.player !== null) {
-      this.player.play().catch(() => {
+    const p = this.player;
+    if (p !== null) {
+      // 播完之后再点播放：AVPlayer 仍停在末尾，play() 一帧内又回到 completed，
+      // 表现就是「点了没反应」。顺序模式播完队列最后一首正是这个状态
+      // （LOOP_ONE/LOOP_LIST 会自动续播，走不到这里）。先把位置拉回开头再播。
+      const dur: number = this.getDuration();
+      if (dur > 0 && this.position >= dur - 500) {
+        this.position = 0;
+        this.notify();
+        // seek 在当前 SDK 返回 void（异步提交给原生层），seek 与 play 由播放器内部
+        // 按序执行，所以直接连写即可，不需要等 Promise。
+        p.seek(0);
+        p.play().catch((): void => {
+        });
+        return;
+      }
+      p.play().catch((): void => {
       });
       return;
     }
     if (this.current.id.length > 0) {
-      this.playCurrent().catch(() => {
+      this.playCurrent().catch((): void => {
       });
     }
   }
@@ -886,16 +901,26 @@ export class Player {
         }
       }
     });
+    let opened: fs.File | null = null;
     try {
       if (localPath.length > 0) {
-        const file = fs.openSync(localPath, fs.OpenMode.READ_ONLY);
-        const size = fs.statSync(file.fd).size;
-        this.localFile = file;
-        player.fdSrc = { fd: file.fd, offset: 0, length: size };
+        opened = fs.openSync(localPath, fs.OpenMode.READ_ONLY);
+        const size = fs.statSync(opened.fd).size;
+        this.localFile = opened;
+        player.fdSrc = { fd: opened.fd, offset: 0, length: size };
       } else {
         player.url = url;
       }
     } catch (e) {
+      // statSync / fdSrc 赋值失败时，fd 已经打开但没交给 localFile，
+      // releasePlayer 管不到它 —— 不在这里关，每失败一次就漏一个句柄。
+      if (opened !== null && this.localFile !== opened) {
+        try {
+          fs.closeSync(opened);
+        } catch (closeErr) {
+          console.warn('[Player] 关闭残留 fd 失败 ' + String(closeErr));
+        }
+      }
       this.handleFail('无效的播放链接');
     }
   }

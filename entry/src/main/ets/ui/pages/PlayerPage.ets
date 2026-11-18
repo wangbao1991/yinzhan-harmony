@@ -769,7 +769,7 @@ export struct PlayerPage {
         // 可见的歌词入口：手势万一是别的原因失效，这个按钮一定能点
         Row({ space: 5 }) {
           SymbolGlyph($r('sys.symbol.text_alignleft'))
-            .fontSize(13)
+            .fontSize(FONT.callout)
             .fontColor([this.onBgSmall()])
           Text('歌词')
             .fontSize(FONT.micro)
@@ -794,7 +794,7 @@ export struct PlayerPage {
 
       Column({ space: 6 }) {
         Text(this.song.name.length > 0 ? this.song.name : '暂无播放')
-          .fontSize(23)
+          .fontSize(FONT.title)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.p().text)
           .maxLines(1)
@@ -826,14 +826,14 @@ export struct PlayerPage {
 
       Row({ space: 6 }) {
         Text(qualityLabel(this.actualQuality))
-          .fontSize(9)
+          .fontSize(FONT.micro)
           .fontColor(this.p().primary)
           .backgroundColor(this.p().primarySoft)
           .borderRadius(4)
           .padding({ left: 5, right: 5, top: 2, bottom: 2 })
         if (audioFormat(this.song.url).length > 0) {
           Text(audioFormat(this.song.url))
-            .fontSize(9)
+            .fontSize(FONT.micro)
             .fontColor(this.onBgSmall())
             .border({ width: 0.5, color: this.p().line })
             .borderRadius(4)
@@ -917,7 +917,7 @@ export struct PlayerPage {
       // 收藏与「更多」在底部动作栏已经有了，这里不再重复一份；
       // 头部只负责「点击收起歌词」，右侧给个小箭头表明可收起。
       SymbolGlyph($r('sys.symbol.chevron_down'))
-        .fontSize(15)
+        .fontSize(FONT.body)
         .fontColor([this.onBgSmall()])
         .padding({ left: 6, right: 4 })
     }

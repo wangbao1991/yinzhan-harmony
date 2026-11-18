@@ -184,7 +184,7 @@ export struct DiscoverSectionPage {
             Cover({ uri: item.cover, fallbackUri: item.coverFallback, side: 0, radius: 12 })
             if (item.badge.length > 0) {
               Text(item.badge)
-                .fontSize(9)
+                .fontSize(FONT.micro)
                 .fontColor('#FFFFFFFF')
                 .backgroundColor('#80000000')
                 .borderRadius(5)

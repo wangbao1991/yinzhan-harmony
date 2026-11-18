@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>音栈 · 我的歌单：封面实时刷新 / 左滑移除 / 排列与入口</title>
+<style>
+  :root{
+    --ink:#12151c; --ink2:#4a505e; --ink3:#7c8494;
+    --line:#e6e9f0; --brand:#2d6cff; --bg:#f5f7fb; --card:#fff;
+    --ok:#0a8f52; --bad:#c2334a; --amber:#b06a00;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:44px 24px 64px;background:
+      radial-gradient(1200px 520px at 18% -10%, #e8eeff 0%, rgba(232,238,255,0) 62%),
+      radial-gradient(900px 420px at 92% 4%, #f3e9ff 0%, rgba(243,233,255,0) 58%),
+      var(--bg);
+    color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;letter-spacing:.14em;
+    color:var(--brand);background:#e9efff;border:1px solid #d8e2ff;padding:6px 12px;border-radius:999px;font-weight:600}
+  h1{font-size:33px;line-height:1.26;margin:18px 0 10px;letter-spacing:-.4px}
+  h1 em{font-style:normal;background:linear-gradient(100deg,#2d6cff,#8b5cf6);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{font-size:15.2px;line-height:1.85;color:var(--ink2);max-width:820px}
+  .lead b{color:var(--ink)}
+
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:24px;margin-top:24px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 18px 44px -30px rgba(16,24,40,.3)}
+  .stage h2{font-size:17.5px;margin:0 0 4px}
+  .stage .sub{font-size:13px;color:var(--ink3);margin:0 0 20px}
+
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:34px}
+  .case{text-align:center}
+  .tag{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.06em;margin-bottom:10px;
+    padding:4px 10px;border-radius:999px}
+  .case.before .tag{color:var(--bad);background:#fdf0f2;border:1px solid #f8dfe3}
+  .case.after .tag{color:var(--ok);background:#effaf4;border:1px solid #d8f0e3}
+  .phone{border:1px solid #e1e6ef;border-radius:18px;overflow:hidden;background:#fff;
+    box-shadow:0 14px 34px -26px rgba(16,24,40,.5);text-align:left}
+  .status{height:22px;background:#f7f9fd;display:flex;align-items:center;justify-content:space-between;
+    padding:0 11px;font-size:8px;color:#8a92a3;border-bottom:1px solid #eef1f7}
+  .screen{padding:10px 11px 12px}
+  .title{font-size:12.5px;font-weight:800;letter-spacing:-.2px}
+  .hint{font-size:8px;color:#98a0b0;margin-top:1px}
+  .rowhead{display:flex;align-items:baseline;justify-content:space-between;margin:12px 0 7px}
+  .rowhead b{font-size:11.5px}
+  .rowhead span{font-size:8.4px;color:#98a0b0}
+
+  .g2{display:flex;justify-content:space-between}
+  .g3{display:flex;gap:6px;flex-wrap:wrap}
+  .pl{width:29%}
+  .pl2{width:29%}
+  .cov{width:100%;aspect-ratio:1;border-radius:9px;position:relative;overflow:hidden}
+  .c1{background:linear-gradient(150deg,#6c5ce7,#3a2fb8)}
+  .c2{background:linear-gradient(150deg,#4aa3f0,#1f6fbf)}
+  .c3{background:linear-gradient(150deg,#3fbf7f,#1c8a58)}
+  .empty{background:linear-gradient(135deg,#eef1f8,#e3e8f3);display:flex;align-items:center;justify-content:center;
+    color:#bfc6d4;font-size:15px}
+  .pl p{margin:5px 0 0;font-size:8.6px;font-weight:600;color:#2a2f3a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pl small{font-size:7.6px;color:#98a0b0}
+  .gapbox{flex:1;display:flex;align-items:center;justify-content:center}
+  .gapbox span{font-size:8.2px;color:#c2334a;border:1px dashed #e6b6c0;background:#fdf4f6;
+    padding:5px 6px;border-radius:6px;text-align:center;line-height:1.45;width:76px;display:block}
+  .note{font-size:12.4px;line-height:1.7;color:var(--ink2);margin-top:12px;text-align:left}
+  .note b{color:var(--ink)}
+  .note em{font-style:normal;color:var(--bad);font-weight:600}
+  .case.after .note em{color:var(--ok)}
+
+  .flow{display:flex;align-items:stretch;gap:0;margin:8px 0 2px}
+  .step{flex:1;background:#f7f9fd;border:1px solid #e6eaf3;border-radius:12px;padding:11px 9px;
+    font-size:11.4px;line-height:1.5;color:#4a505e;text-align:center;display:flex;flex-direction:column;
+    justify-content:center;min-height:62px}
+  .step b{display:block;font-size:12.2px;color:#12151c;margin-bottom:2px}
+  .arrow{width:22px;display:flex;align-items:center;justify-content:center;color:#b9c1d0;font-size:14px}
+  .flow.bad .step{background:#fdf6f7;border-color:#f6dfe3}
+  .flow.bad .step b{color:#a02a3f}
+  .flow.good .step{background:#f5fbf8;border-color:#d9efe4}
+  .flow.good .step b{color:#0a6e42}
+  .flowTitle{font-size:12.3px;color:var(--ink3);margin:14px 0 7px;font-weight:600}
+  .flowTitle:first-child{margin-top:0}
+
+  table{width:100%;border-collapse:collapse;margin-top:4px;font-size:13.2px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11.5px;letter-spacing:.08em;color:var(--ink3);font-weight:700}
+  tr:last-child td{border-bottom:none}
+  td b{color:var(--ink)}
+  code{background:#f1f4fb;border:1px solid #e2e8f6;border-radius:5px;padding:1px 5px;font-size:11.8px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#33405c}
+
+  ul.check{margin:6px 0 0;padding:0;list-style:none}
+  ul.check li{position:relative;padding-left:20px;font-size:13.4px;line-height:1.85;color:var(--ink2)}
+  ul.check li:before{content:"✓";position:absolute;left:0;color:var(--ok);font-weight:700}
+  .foot{margin-top:20px;font-size:12.2px;color:var(--ink3);line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <span class="eyebrow">音栈 · 我的歌单</span>
+  <h1>封面要跟着歌走，<em>歌单里的歌也要能左滑移除</em></h1>
+  <p class="lead">
+    这三条反馈看着分散，其实都落在「我的歌单」这一块：删歌后首页封面和首数不动、歌单内不能左滑、
+    顶栏的「＋」和列表头的「新建」是同一件事。另外 2 个歌单时中间空出一格，是布局把两张卡推到了两端。
+  </p>
+
+  <div class="stage">
+    <h2>一、删歌之后，封面为什么不动</h2>
+    <p class="sub">两层原因叠在一起，只修一层都不够</p>
+
+    <div class="flowTitle">改前</div>
+    <div class="flow bad">
+      <div class="step"><b>歌单删到 0 首</b>songs 变空</div>
+      <div class="arrow">→</div>
+      <div class="step"><b>cover 没重算</b>还挂着上一首的封面</div>
+      <div class="arrow">→</div>
+      <div class="step"><b>卡片是 @Builder 传值</b>参数是拷贝，拿不到新值</div>
+      <div class="arrow">→</div>
+      <div class="step"><b>结果</b>0 首 + 旧封面，一直不变</div>
+    </div>
+
+    <div class="flowTitle">改后</div>
+    <div class="flow good">
+      <div class="step"><b>移除歌</b>Library.removeFromPlaylist</div>
+      <div class="arrow">→</div>
+      <div class="step"><b>重算 cover</b>有歌取第一首，空了就置空</div>
+      <div class="arrow">→</div>
+      <div class="step"><b>notify 广播</b>libraryVersion 递增</div>
+      <div class="arrow">→</div>
+      <div class="step"><b>PlaylistCard 独立组件</b>@Prop 单向同步，立刻变</div>
+    </div>
+
+    <div class="pair" style="margin-top:22px">
+      <div class="case before">
+        <span class="tag">改前 · 删空后</span>
+        <div class="phone">
+          <div class="screen">
+            <div class="rowhead"><b>我的歌单</b><span>新建 ›</span></div>
+            <div class="g3">
+              <div class="pl">
+                <div class="cov c1"></div>
+                <p>我的</p><small>0 首</small>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note"><em>0 首却还顶着一张封面</em>，看起来像数据没进去。</p>
+      </div>
+
+      <div class="case after">
+        <span class="tag">改后 · 删空后</span>
+        <div class="phone">
+          <div class="screen">
+            <div class="rowhead"><b>我的歌单</b><span>新建 ›</span></div>
+            <div class="g3">
+              <div class="pl">
+                <div class="cov empty">♪</div>
+                <p>我的</p><small>0 首</small>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note"><em>封面回到占位</em>，再往里加歌会自动取第一首的图。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <h2>二、歌单里的歌：左滑移除</h2>
+    <p class="sub">和「本地音乐」的左滑不是一回事，不能复用同一段</p>
+    <table>
+      <tr><th style="width:22%">列表</th><th style="width:22%">左滑文案</th><th>动作</th></tr>
+      <tr>
+        <td><b>本地音乐</b></td>
+        <td>删除</td>
+        <td>删掉应用内的文件副本（<code>LocalRepo.remove</code>），顺手摘掉播放队列里的同一条。手机原始文件不动。</td>
+      </tr>
+      <tr>
+        <td><b>自建歌单</b></td>
+        <td>移除</td>
+        <td>只把这首歌从歌单里拿掉（<code>Library.removeFromPlaylist</code>），文件、缓存、收藏全都不碰。</td>
+      </tr>
+      <tr>
+        <td><b>收藏 / 历史 / 平台歌单</b></td>
+        <td>——</td>
+        <td>不挂左滑。这些列表的增删不归这一页管，硬加一个「删除」只会让人以为删了文件。</td>
+      </tr>
+    </table>
+    <p class="foot">两条路径用 <code>isLocalKind()</code> 分流，左滑按钮的图标和文案都跟着变（垃圾桶 / 减号）。</p>
+  </div>
+
+  <div class="stage">
+    <h2>三、2 个歌单时中间空出一格</h2>
+    <p class="sub">不是少画了一个，是 SpaceBetween 把两张卡拉到了两端</p>
+    <div class="pair">
+      <div class="case before">
+        <span class="tag">改前 · SpaceBetween</span>
+        <div class="phone">
+          <div class="screen">
+            <div class="rowhead"><b>我的歌单</b><span>新建 ›</span></div>
+            <div class="g2">
+              <div class="pl2">
+                <div class="cov c2"></div>
+                <p>用</p><small>1 首</small>
+              </div>
+              <div class="gapbox"><span>空出一格<br>像少了一张</span></div>
+              <div class="pl2">
+                <div class="cov c1"></div>
+                <p>我的</p><small>0 首</small>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note"><em>固定 108 宽 + 两端对齐</em>：卡片本身没变，但它们被推到了左右边缘。</p>
+      </div>
+
+      <div class="case after">
+        <span class="tag">改后 · 三列左对齐</span>
+        <div class="phone">
+          <div class="screen">
+            <div class="rowhead"><b>我的歌单</b><span>新建 ›</span></div>
+            <div class="g3">
+              <div class="pl">
+                <div class="cov c2"></div>
+                <p>用</p><small>1 首</small>
+              </div>
+              <div class="pl">
+                <div class="cov c1"></div>
+                <p>我的</p><small>0 首</small>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="note"><em>定宽 31% + 左对齐</em>：两张挨着排，右边留白就是「还能再放一张」，不再像少画了一个。</p>
+      </div>
+    </div>
+    <p class="foot">
+      列宽按 31% 计算：360vp 屏减去左右各 20 的内边距后是 320，三列 99 + 间距 6 刚好放得下；
+      封面用 <code>aspectRatio(1)</code> 跟随容器，换屏宽不用改尺寸。
+    </p>
+  </div>
+
+  <div class="stage">
+    <h2>四、新建入口只留一处</h2>
+    <table>
+      <tr><th style="width:26%">位置</th><th>处理</th></tr>
+      <tr><td><b>首页顶栏「＋」</b></td><td>删掉。它和「我的歌单 · 新建」做的是同一件事，同屏两个入口。</td></tr>
+      <tr><td><b>「我的歌单 · 新建」</b></td><td>保留，有歌单时显示在标题右侧。</td></tr>
+      <tr><td><b>空态「新建歌单」按钮</b></td><td>保留，没有歌单时标题旁不再重复放一个，避免同屏三个入口。</td></tr>
+    </table>
+  </div>
+
+  <div class="stage">
+    <h2>五、验证</h2>
+    <p class="sub">BUILD SUCCESSFUL · verify-app success · 32 项自检</p>
+    <ul class="check">
+      <li>编译通过，签名验证 <code>verifiedPassed = True</code>，包体 3.55 MB</li>
+      <li>自检 <b>32 项：PASS 30 / WARN 2 / FAIL 0</b>（两条 WARN 仍是既有的冗余广播）</li>
+      <li>新增 AD 组 5 条规则：移除歌曲必须重算 cover、歌单卡必须是独立组件、不许用 SpaceBetween 排歌单、顶栏不许有「＋」、详情页必须区分「本地音乐 / 自建歌单」并接到 <code>removeFromPlaylist</code></li>
+      <li>四条做了反向注入验证：删掉 cover 重算、改回 SpaceBetween、顶栏塞回「＋」、把 <code>canSwipe</code> 改名 —— 全部立刻报 FAIL</li>
+      <li>顺带修了详情页头部：以前删歌后头部封面也是旧的，现在跟着当前第一首走</li>
+    </ul>
+    <p class="foot">
+      装包前先卸载旧版（公共签名会冲突）。真机上如果觉得三列偏小，可以把列宽放到 48% 做两列，封面会更大，但每屏只能放 4 张。
+    </p>
+  </div>
+
+</div>
+</body>
+</html>

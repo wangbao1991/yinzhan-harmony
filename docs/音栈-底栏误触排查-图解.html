@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>音栈 · 底栏误触排查（点发现进播放页）</title>
+<style>
+  :root{
+    --bg:#0E1116; --card:#171B22; --line:#252B34; --text:#E8ECF2; --dim:#8B95A5;
+    --brand:#6E5BE8; --warn:#E5484D; --ok:#2FA36B; --screen:#F3F4F8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);padding:36px 30px 60px;
+       font:14px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  h1{font-size:23px;margin:0 0 6px;letter-spacing:.2px}
+  h2{font-size:16px;margin:34px 0 12px;padding-left:10px;border-left:3px solid var(--brand)}
+  .sub{color:var(--dim);font-size:13px;margin:0 0 4px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  code{background:#232A34;border-radius:4px;padding:1px 5px;font-size:12.5px;
+       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#C9D2E0}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:500;font-size:12px}
+  td b{color:#fff}
+  .bad{color:#FF7A7E}
+  .good{color:#5FD39A}
+
+  /* ── 对照区 ── */
+  .stage{display:flex;gap:26px;justify-content:center;margin-top:6px}
+  .pane{width:392px;flex:none}
+  .pane h3{margin:0 0 10px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .pane h3 span{font-size:11px;font-weight:400;padding:2px 8px;border-radius:20px}
+  .tag-old{background:rgba(229,72,77,.16);color:#FF8A8D}
+  .tag-new{background:rgba(47,163,107,.16);color:#5FD39A}
+
+  .phone{position:relative;width:392px;height:268px;border-radius:20px;background:var(--screen);
+         overflow:hidden;border:1px solid #2B3340}
+  .hint{position:absolute;top:66px;width:100%;text-align:center;color:#9AA3B2;font-size:11.5px;line-height:1.9}
+  .hint b{color:#5A6270;font-weight:500}
+
+  /* 命中区分段说明：挂在底栏上方，不压进底栏内容 */
+  .annots{position:absolute;left:18px;right:18px;bottom:86px;display:flex;pointer-events:none}
+  .annots span{position:relative;display:flex;align-items:flex-end;justify-content:center;
+               font-size:10px;line-height:1.3;text-align:center;padding-bottom:8px}
+  .annots span::after{content:'';position:absolute;left:50%;bottom:0;width:1px;height:7px;
+                      background:currentColor;opacity:.55}
+  .annots.old{color:#C22F34}
+  .annots.new{color:#1F7A50}
+
+  .dock{position:absolute;left:14px;right:14px;bottom:14px;height:62px;border-radius:31px;
+        background:#fff;box-shadow:0 8px 22px rgba(40,50,80,.16);overflow:hidden}
+  .dock-in{position:absolute;inset:0;display:flex}
+  .dock-in.dim{opacity:.26}
+  .cell{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+  .cell svg{width:22px;height:22px;stroke:#B4BBC7;stroke-width:1.8;fill:none}
+  .cell i{font-style:normal;font-size:9.5px;color:#B4BBC7}
+  .cell.on svg{stroke:var(--brand)}
+  .cell.on i{color:var(--brand);font-weight:600}
+
+  /* 收起态内容 */
+  .docked{position:absolute;inset:5px 4px;display:flex;align-items:center;gap:8px;opacity:0}
+  .fab{width:44px;height:44px;border-radius:22px;background:var(--brand);flex:none;
+       display:flex;align-items:center;justify-content:center;box-shadow:0 5px 14px rgba(110,91,232,.3)}
+  .fab svg{width:20px;height:20px;fill:#fff}
+  .mini{flex:1;height:52px;display:flex;align-items:center;gap:8px;padding-right:4px}
+  .art{width:36px;height:36px;border-radius:10px;flex:none;
+       background:linear-gradient(150deg,#A9BEE0,#CBD7E8);}
+  .meta{flex:1;min-width:0}
+  .meta b{display:block;font-size:13.5px;font-weight:500;color:#1B1D23;line-height:1.25}
+  .meta i{font-style:normal;font-size:10.5px;color:#9AA1AD}
+  .tb{width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex:none}
+  .tb svg{width:20px;height:20px;fill:#1B1D23}
+  .tb.mid svg,.tb.list svg{width:17px;height:17px;fill:#6B7280}
+
+  /* 命中区 */
+  .hot{position:absolute;inset:5px 4px;display:flex;pointer-events:none;border-radius:26px}
+  .hot.old{border:1.5px dashed var(--warn);background:rgba(229,72,77,.09)}
+  .hot.new{border:1.5px solid rgba(47,163,107,.85);background:rgba(47,163,107,.10)}
+  .seg{height:100%;display:flex;align-items:center;justify-content:center;
+       font-size:9.5px;text-align:center;line-height:1.25;padding:0 2px;
+       border-right:1px dashed rgba(229,72,77,.45);color:#C22F34}
+  .seg:last-child{border-right:none}
+  .hot.new .seg{border-right:1px solid rgba(47,163,107,.35);color:#1F7A50}
+
+  /* 坐标尺 */
+  .ruler{position:relative;height:26px;margin-bottom:4px}
+  .ruler .pt{position:absolute;bottom:0;transform:translateX(-50%);text-align:center;
+             font-size:10px;color:#7C8697}
+  .ruler .pt::after{content:'';display:block;width:1px;height:9px;background:#3A4453;margin:3px auto 0}
+  .ruler .pt.hit{color:#FF8A8D;font-weight:600}
+  .ruler .pt.hit::after{background:var(--warn);width:2px}
+
+  /* 控制条 */
+  .ctrl{display:flex;align-items:center;gap:14px;margin:22px auto 0;max-width:830px;
+        background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 18px}
+  .ctrl input[type=range]{flex:1;accent-color:var(--brand)}
+  .ctrl b{font-variant-numeric:tabular-nums;min-width:44px;display:inline-block;color:#fff}
+  .ctrl span{color:var(--dim);font-size:12.5px}
+
+  .legend{display:flex;gap:18px;justify-content:center;margin-top:14px;font-size:12px;color:var(--dim);flex-wrap:wrap}
+  .legend i{display:inline-block;width:14px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle}
+  .k1{background:rgba(229,72,77,.18);border:1px dashed var(--warn)}
+  .k2{background:rgba(47,163,107,.18);border:1px solid #2FA36B}
+
+  .note{margin-top:10px;font-size:12.5px;color:var(--dim)}
+  .note b{color:#C9D2E0;font-weight:500}
+</style>
+</head>
+<body>
+
+<h1>点「发现」却进了播放页</h1>
+<p class="sub">不是阴影。是收起态那条<b>看得见的播放坞</b>，在展开时变成了一层<b>看不见的</b>播放坞，正好压在三个标签上。</p>
+
+<h2>一、先看现象和位置对不对得上</h2>
+<div class="card">
+  <p style="margin:0 0 10px;color:var(--dim);font-size:13px">
+    按 392 屏宽、底栏左右各内缩 14 算，三格中心与播放坞内部按钮的横坐标是这样的：
+  </p>
+  <table>
+    <tr><th>点击位置</th><th>想命中的</th><th>实际落在</th><th>结果</th></tr>
+    <tr><td><b>x ≈ 75</b>　首页</td><td>首页格</td><td>x 70 起就是播放坞的圆按钮面</td><td class="bad">回首页（碰巧正确）</td></tr>
+    <tr><td><b>x ≈ 196</b>　发现</td><td>发现格</td><td>播放坞「歌名」区（整块绑了 onClick）</td><td class="bad">打开播放页</td></tr>
+    <tr><td><b>x ≈ 300</b>　设置</td><td>设置格</td><td>播放键（x=300）</td><td class="bad">播放 / 暂停</td></tr>
+    <tr><td><b>x ≈ 317</b>　设置</td><td>设置格</td><td>下一首（x=328）与列表（x=356）之间</td><td class="bad">切歌 / 弹队列</td></tr>
+    <tr><td><b>x &gt; 374</b>　设置最右缘</td><td>设置格</td><td>播放坞右边界之外</td><td class="good">终于进了设置</td></tr>
+  </table>
+  <p class="note">用户的原话是「只有设置最边缘那一点能触发」—— <b>374 正好是播放坞的右边界</b>，越过去才轮到标签栏自己。</p>
+</div>
+
+<h2>二、病灶：HitTestMode.None 只关自己，不关子树</h2>
+<div class="card" style="display:flex;gap:26px;align-items:flex-start">
+  <div style="flex:1">
+    <table style="margin:0">
+      <tr><th>层</th><th>展开时的视觉</th><th>展开时的命中</th></tr>
+      <tr><td>展开态三格标签</td><td>可见</td><td class="good">✓ 正常</td></tr>
+      <tr><td>收起态播放坞</td><td>opacity 0，完全看不见</td><td class="bad">✓ 照样吃点击</td></tr>
+    </table>
+    <p class="note" style="margin-top:14px">
+      原写法是 <code>.hitTestBehavior(collapse() &gt; 0.45 ? Default : None)</code>。<br>
+      <b>None 的语义是「这一层自己不参与命中」，不是「整棵子树都不参与」。</b>
+      播放坞里的封面、歌名、三个控制键仍然各自响应——于是透明的一层把标签栏整条盖住了。
+    </p>
+  </div>
+  <div style="flex:1">
+    <p class="note" style="margin:0 0 8px"><b>阴影为什么不是原因</b></p>
+    <p class="note" style="margin:0">
+      <code>.shadow()</code> 只参与绘制（radius 18、offsetY 8），不进入命中测试树。
+      投影再长也点不到。真正的问题是<b>布局上完全重叠</b>：两层都是 <code>width('100%')</code>，
+      同一个 <code>Stack</code>，后写的那层在上。
+    </p>
+  </div>
+</div>
+
+<h2>三、拖动看命中区（左边改前，右边改后）</h2>
+
+<div class="stage">
+  <div class="pane">
+    <h3>改前<span class="tag-old">红色虚线 = 真正能吃点击的范围</span></h3>
+    <div class="ruler">
+      <div class="pt" style="left:75px">75</div>
+      <div class="pt hit" style="left:196px">196</div>
+      <div class="pt hit" style="left:317px">317</div>
+    </div>
+    <div class="phone">
+      <div class="hint">
+        <b>首页</b>　·　正在播放<br>
+        底部这一条里，播放坞是透明地盖在三格上面的
+      </div>
+      <div class="annots old">
+        <span style="width:52px">圆按钮</span>
+        <span style="flex:1">进播放页（封面 / 歌名）</span>
+        <span style="width:84px">控制键 × 3</span>
+      </div>
+      <div class="dock" id="oldDock">
+        <div class="dock-in dim">
+          <div class="cell on"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4z"/></svg><i>首页</i></div>
+          <div class="cell"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5 13 13l-4.5 2.5L11 11z"/></svg><i>发现</i></div>
+          <div class="cell"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3h-4l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12"/></svg><i>设置</i></div>
+        </div>
+        <div class="docked">
+          <div class="fab"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4z"/></svg></div>
+          <div class="mini">
+            <div class="art"></div>
+            <div class="meta"><b>勇气</b><i>梁静茹</i></div>
+            <div class="tb"><svg viewBox="0 0 24 24"><path d="M6 4l12 8-12 8z"/></svg></div>
+            <div class="tb mid"><svg viewBox="0 0 24 24"><path d="M5 5l10 7-10 7z"/><rect x="16.5" y="5" width="2.4" height="14" rx="1"/></svg></div>
+            <div class="tb list"><svg viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+          </div>
+        </div>
+        <div class="hot old">
+          <div class="seg" style="width:52px"></div>
+          <div class="seg" style="flex:1"></div>
+          <div class="seg" style="width:84px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane">
+    <h3>改后<span class="tag-new">绿色实线 = 当前形态的可点范围</span></h3>
+    <div class="ruler">
+      <div class="pt" style="left:75px">75</div>
+      <div class="pt" style="left:196px">196</div>
+      <div class="pt" style="left:317px">317</div>
+    </div>
+    <div class="phone">
+      <div class="hint">
+        <b>首页</b>　·　正在播放<br>
+        同一时刻只有一层在场，另一层整棵子树被 enabled 关掉
+      </div>
+      <div class="annots new" id="newAnnots" style="display:none">
+        <span style="width:52px">回首页</span>
+        <span style="flex:1">进播放页</span>
+        <span style="width:84px">控制键 × 3</span>
+      </div>
+      <div class="dock" id="newDock">
+        <div class="dock-in" id="newCells">
+          <div class="cell on"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4z"/></svg><i>首页</i></div>
+          <div class="cell"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5 13 13l-4.5 2.5L11 11z"/></svg><i>发现</i></div>
+          <div class="cell"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3h-4l-.4 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5A7 7 0 0 0 5 12"/></svg><i>设置</i></div>
+        </div>
+        <div class="docked" id="newDocked">
+          <div class="fab" id="newFab"><svg viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20H4z"/></svg></div>
+          <div class="mini">
+            <div class="art"></div>
+            <div class="meta"><b>勇气</b><i>梁静茹</i></div>
+            <div class="tb"><svg viewBox="0 0 24 24"><path d="M6 4l12 8-12 8z"/></svg></div>
+            <div class="tb mid"><svg viewBox="0 0 24 24"><path d="M5 5l10 7-10 7z"/><rect x="16.5" y="5" width="2.4" height="14" rx="1"/></svg></div>
+            <div class="tb list"><svg viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+          </div>
+        </div>
+        <div class="hot new" id="newHotCells"><div class="seg" style="flex:1">首页</div><div class="seg" style="flex:1">发现</div><div class="seg" style="flex:1">设置</div></div>
+        <div class="hot new" id="newHotDock" style="display:none">
+          <div class="seg" style="width:52px"></div>
+          <div class="seg" style="flex:1"></div>
+          <div class="seg" style="width:84px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <span><i class="k1"></i>改前：透明播放坞的命中范围（一直存在）</span>
+  <span><i class="k2"></i>改后：只有当前形态可点</span>
+</div>
+
+<div class="ctrl">
+  <span>收起进度</span>
+  <input id="c" type="range" min="0" max="100" value="0">
+  <b id="cv">0.00</b>
+  <span id="msg">展开态 —— 改前：整条被播放坞盖住　|　改后：只有三格可点</span>
+</div>
+
+<h2>四、改了什么</h2>
+<div class="card">
+  <table>
+    <tr><th>改动</th><th>作用</th></tr>
+    <tr>
+      <td><code>const FORM_SWITCH = 0.34</code><br>两层互补的 <code>.enabled()</code></td>
+      <td>展开层 <code>collapse &lt; 0.34</code>、收起层 <code>collapse ≥ 0.34</code>，同一条线切分，不留「谁都能点」的空窗。<b>enabled 会连整棵子树一起关</b>，这才是真正的「这一层不在场」。</td>
+    </tr>
+    <tr>
+      <td>MiniPlayer 的 <code>live()</code> 守卫</td>
+      <td>进播放页 / 播放暂停 / 下一首 / 队列四个回调，紧凑版在 <code>bar &lt; 0.34</code> 时直接 return。<b>万一某台机器上 enabled 没按住，也还有这一道。</b></td>
+    </tr>
+    <tr>
+      <td>外壳那条播放条：高度收到 0 后 <code>.enabled(false)</code></td>
+      <td>它为了保住淡出过渡留在树上，里面仍是 58 高的一整套控件。<b>clip 只裁绘制、不裁命中</b>，不关掉就是底栏上方一条看不见的「点哪都进播放页」。</td>
+    </tr>
+  </table>
+</div>
+
+<h2>五、验证</h2>
+<div class="card">
+  <p class="note" style="margin:0">
+    自检 <b>35 项：PASS 33 / WARN 2 / FAIL 0</b>，新增 AG 组三条规则；
+    并做了反向注入，三条都会当场 FAIL：
+  </p>
+  <table style="margin-top:10px">
+    <tr><th>注入</th><th>检出</th></tr>
+    <tr><td>收起态去掉 <code>.enabled()</code>（就是这次的 bug）</td><td class="bad">FAIL · 两层没有 enabled 互锁</td></tr>
+    <tr><td>enter() 去掉 live() 守卫</td><td class="bad">FAIL · 点标签会掉进播放页</td></tr>
+    <tr><td>外壳 0 高播放条去掉 enabled</td><td class="bad">FAIL · 底栏上方留暗热区</td></tr>
+  </table>
+  <p class="note" style="margin:10px 0 0">
+    编译 <code>BUILD SUCCESSFUL</code>，验签 <code>verify-app success</code>，包内 <code>com.yinzhan.music / 1 / 1.0</code>。
+  </p>
+</div>
+
+<script>
+  const c = document.getElementById('c');
+  const cv = document.getElementById('cv');
+  const msg = document.getElementById('msg');
+  const newCells = document.getElementById('newCells');
+  const newDocked = document.getElementById('newDocked');
+  const newFab = document.getElementById('newFab');
+  const newDock = document.getElementById('newDock');
+  const hotCells = document.getElementById('newHotCells');
+  const hotDock = document.getElementById('newHotDock');
+
+  const stage = (v, a, b) => Math.max(0, Math.min(1, (v - a) / (b - a)));
+  const ease = v => 1 - Math.pow(1 - v, 3);
+
+  function render() {
+    const p = +c.value / 100;
+    cv.textContent = p.toFixed(2);
+
+    // 栏体 62 → 52，圆角恒半高
+    const h = 62 - 10 * ease(stage(p, 0, 0.78));
+    newDock.style.height = h + 'px';
+    newDock.style.borderRadius = (h / 2) + 'px';
+
+    // 三格：0 → 0.34 退干净
+    newCells.style.opacity = 1 - stage(p, 0, 0.34);
+    // 圆按钮 0.28~0.60 浮现并放大
+    const f = stage(p, 0.28, 0.60);
+    newDocked.style.opacity = stage(p, 0.30, 0.66);
+    newFab.style.transform = 'scale(' + (0.72 + 0.28 * ease(f)) + ')';
+
+    // 命中区：0.34 一刀切
+    const dockOn = p >= 0.34;
+    hotCells.style.display = dockOn ? 'none' : 'flex';
+    hotDock.style.display = dockOn ? 'flex' : 'none';
+    document.getElementById('newAnnots').style.display = dockOn ? 'flex' : 'none';
+
+    msg.textContent = dockOn
+      ? '收起态 —— 只有圆按钮和播放坞可点，三格整层禁用'
+      : '展开态 —— 改前：整条被透明播放坞盖住　|　改后：只有三格可点';
+  }
+  c.addEventListener('input', render);
+  const q = new URLSearchParams(location.search).get('c');
+  if (q !== null && !isNaN(+q)) c.value = String(Math.round(+q * 100));
+  render();
+</script>
+</body>
+</html>

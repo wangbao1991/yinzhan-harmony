@@ -541,7 +541,7 @@ export struct SheetDetailPage {
         // 多选态把播放入口收起来：这时点「播放全部」既会打断选择，又容易误触
         if (!this.selectMode) {
           Row({ space: 6 }) {
-            SymbolGlyph($r('sys.symbol.play_fill')).fontSize(15).fontColor(['#FF191713'])
+            SymbolGlyph($r('sys.symbol.play_fill')).fontSize(FONT.body).fontColor(['#FF191713'])
             Text('播放全部').fontSize(FONT.callout).fontWeight(FontWeight.Medium).fontColor('#FF191713')
           }
           .height(42)
@@ -561,7 +561,7 @@ export struct SheetDetailPage {
         if (this.canFavoriteSheet() && !this.selectMode) {
           Row({ space: 5 }) {
             SymbolGlyph(this.sheetFav ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
-              .fontSize(15)
+              .fontSize(FONT.body)
               .fontColor([this.sheetFav ? '#FF191713' : this.p().primary])
             Text(this.sheetFav ? '已收藏' : '收藏')
               .fontSize(FONT.caption)

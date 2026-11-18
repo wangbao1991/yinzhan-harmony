@@ -7,6 +7,8 @@
  * 数据由 PlayerCardAbility 通过 formBindingData 注入 @LocalStorageProp。
  * 整卡点击走 router 动作拉起主界面，不做假播放控制。
  */
+import { FONT } from '../../common/Constants';
+
 let storage: LocalStorage = new LocalStorage();
 
 @Entry(storage)
@@ -23,7 +25,7 @@ struct PlayerCard {
           .fontSize(10)
           .fontColor('#FF5C5851')
         Text(this.songName)
-          .fontSize(15)
+          .fontSize(FONT.body)
           .fontWeight(FontWeight.Medium)
           .fontColor('#FF1B1A18')
           .maxLines(1)
@@ -38,7 +40,7 @@ struct PlayerCard {
       .layoutWeight(1)
 
       Text('▶')
-        .fontSize(15)
+        .fontSize(FONT.body)
         .fontColor('#FF191713')
         .width(34)
         .height(34)

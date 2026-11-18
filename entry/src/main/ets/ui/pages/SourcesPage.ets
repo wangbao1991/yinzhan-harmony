@@ -92,7 +92,7 @@ struct SourceSwipeButton {
       .clip(true)
 
       Text(this.label)
-        .fontSize(9)
+        .fontSize(FONT.micro)
         .fontColor(this.labelColor())
     }
     .alignItems(HorizontalAlign.Center)
@@ -1739,7 +1739,7 @@ export struct SourcesPage {
       Row({ space: 10 }) {
         Stack() {
           SymbolGlyph($r('sys.symbol.link'))
-            .fontSize(15)
+            .fontSize(FONT.body)
             .fontColor([this.p().primary])
         }
         .width(30)
@@ -2419,7 +2419,7 @@ export struct SourcesPage {
           Stack() {
             if (this.isSelected(item.id)) {
               SymbolGlyph($r('sys.symbol.checkmark'))
-                .fontSize(13)
+                .fontSize(FONT.callout)
                 .fontColor(['#FF191713'])
             }
           }
@@ -2502,7 +2502,7 @@ export struct SourcesPage {
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(item.platforms, (id: string) => {
             Text(platformShort(id))
-              .fontSize(9)
+              .fontSize(FONT.micro)
               .fontColor(this.p().text2)
               .backgroundColor(this.p().cardAlt)
               .borderRadius(4)
@@ -2511,7 +2511,7 @@ export struct SourcesPage {
           }, (id: string) => item.id + id)
           ForEach(item.qualities, (q: string) => {
             Text(q)
-              .fontSize(9)
+              .fontSize(FONT.micro)
               .fontColor(this.p().primary)
               .backgroundColor(this.p().primarySoft)
               .borderRadius(4)

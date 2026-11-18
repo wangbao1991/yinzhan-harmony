@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>音栈 · 队列玻璃通透度调优</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#fff; --ink:#1c2130; --sub:#5b6478; --line:#e5e8f0;
+    --brand:#4a5bd6; --ok:#0f9d6e; --ok-soft:#e7f7f1; --dim:#8a93a6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:34px 20px 60px;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.65}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 6px}
+  .lead{color:var(--sub);font-size:14px;margin:0 0 22px}
+  .hero{background:linear-gradient(120deg,#4a5bd6,#6b53d8);color:#fff;border-radius:16px;
+    padding:22px 26px;margin-bottom:24px;box-shadow:0 8px 24px rgba(74,91,214,.18)}
+  .hero b{font-size:18px;display:block;margin-bottom:6px}
+  .hero span{font-size:14px;opacity:.94}
+  h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--brand)}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);
+    border-radius:12px;overflow:hidden;font-size:13px}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#f8f9fd;color:var(--sub);font-weight:600;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:600;white-space:nowrap}
+  code{background:#f1f3f9;padding:1px 5px;border-radius:4px;font-size:12px;color:#3a46a8}
+  .note{font-size:12.5px;color:var(--dim);margin:8px 0 0}
+  .stage{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin:16px 0 6px}
+  .cap{font-size:12px;color:var(--sub);text-align:center;margin-bottom:8px}
+  .cap b{font-size:13px;color:var(--ink)}
+  .cap .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:99px;margin-left:5px;vertical-align:1px}
+  .tag.old{background:#eef0f6;color:var(--sub)}
+  .tag.new{background:var(--ok-soft);color:var(--ok)}
+  .phone{position:relative;height:520px;border-radius:22px;overflow:hidden;
+    background:linear-gradient(165deg,#3a2c24,#1a1620 62%,#0c0b0e);
+    box-shadow:0 12px 30px rgba(18,16,22,.24)}
+  .phone .art{position:absolute;inset:-24px;filter:blur(16px) saturate(1.5);
+    background:
+      radial-gradient(38% 26% at 22% 26%, #f0b070 0%, rgba(240,176,112,0) 66%),
+      radial-gradient(34% 22% at 76% 20%, #9d72d8 0%, rgba(157,114,216,0) 66%),
+      radial-gradient(42% 28% at 64% 70%, #2f9db4 0%, rgba(47,157,180,0) 70%),
+      radial-gradient(30% 20% at 26% 76%, #d0553f 0%, rgba(208,85,63,0) 66%),
+      linear-gradient(165deg,#2e241d,#141018 62%,#0a090c)}
+  .phone .veil{position:absolute;inset:0;background:rgba(0,0,0,.22)}
+  .phone.newv .veil{background:rgba(0,0,0,.14)}
+  .sheet{position:absolute;left:12px;right:12px;top:14%;bottom:12px;border-radius:30px;
+    padding:18px 18px 8px;display:flex;flex-direction:column;gap:5px;overflow:hidden}
+  .oldv .sheet{background:rgba(255,255,255,.58);
+    backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4);
+    box-shadow:0 16px 40px rgba(8,10,18,.30)}
+  .newv .sheet{background:rgba(255,255,255,.50);
+    backdrop-filter:blur(34px) saturate(1.6);-webkit-backdrop-filter:blur(34px) saturate(1.6);
+    box-shadow:0 16px 40px rgba(8,10,18,.30)}
+  .sheet:before{content:"";position:absolute;inset:0;pointer-events:none}
+  .oldv .sheet:before{background:linear-gradient(180deg,rgba(255,255,255,.78) 0%,rgba(255,255,255,.10) 22%,
+      rgba(255,255,255,0) 60%,rgba(255,255,255,.20) 100%)}
+  .newv .sheet:before{background:linear-gradient(180deg,rgba(255,255,255,.66) 0%,rgba(255,255,255,.07) 22%,
+      rgba(255,255,255,0) 60%,rgba(255,255,255,.24) 100%)}
+  .hd{position:relative;z-index:1}
+  .hd h4{margin:0;font-size:19px;font-weight:800;color:#16181d}
+  .hd .sub{font-size:10px;color:#6e7480;margin-top:2px}
+  .row{position:relative;z-index:1;display:flex;align-items:center;gap:9px;height:46px;font-size:12.5px}
+  .row .n{width:15px;text-align:center;font-size:10px;color:#6e7480}
+  .row .body{flex:1;min-width:0}
+  .row .t{display:block;color:#16181d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .s{display:block;font-size:9.5px;color:#6e7480}
+  .row .x{font-size:11px;color:#6e7480;opacity:.85}
+  .row.on .t{color:#335cff;font-weight:600}
+  .bars{display:inline-flex;align-items:flex-end;gap:2px;width:15px;justify-content:center}
+  .bars i{display:block;width:2.5px;border-radius:2px;background:#335cff}
+  .bars i:nth-child(1){height:7px}.bars i:nth-child(2){height:13px}.bars i:nth-child(3){height:9px}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h3{margin:0 0 8px;font-size:14px}
+  .card p{margin:0;font-size:12.8px;color:var(--sub)}
+  .foot{margin-top:28px;font-size:12px;color:var(--dim);border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>通透感再推一档</h1>
+  <p class="lead">上一版是 58% 白 + 22% 遮罩 + 24 磨砂。三个数各让一步，玻璃后面那张封面才真正「透」出来。</p>
+
+  <div class="hero">
+    <b>填充 58% → 50%，遮罩 22% → 14%，磨砂 24 → 34。</b>
+    <span>减白让色块透出来，减遮罩让背后不至于压成一团黑，加磨砂让透出来的东西是「雾」而不是「影」——三条一起动才叫通透，只降填充会变成「糊」。</span>
+  </div>
+
+  <div class="stage">
+    <div class="oldv">
+      <div class="cap"><b>上一版</b><span class="tag old">58% 白 · 22% 遮罩 · blur 24</span></div>
+      <div class="phone">
+        <div class="art"></div><div class="veil"></div>
+        <div class="sheet">
+          <div class="hd"><h4>播放队列</h4><div class="sub">共 200 首 · 正在播放第 1 首</div></div>
+          <div class="row on"><span class="bars"><i></i><i></i><i></i></span><span class="body"><span class="t">Always Online</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">2</span><span class="body"><span class="t">我怀念的</span><span class="s">孙燕姿</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">3</span><span class="body"><span class="t">不得不爱</span><span class="s">潘玮柏 / 弦子</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">4</span><span class="body"><span class="t">爱丫爱丫</span><span class="s">By2</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">5</span><span class="body"><span class="t">遗失的心跳</span><span class="s">萧亚轩</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">6</span><span class="body"><span class="t">我还想她</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="newv">
+      <div class="cap"><b>这一版</b><span class="tag new">50% 白 · 14% 遮罩 · blur 34</span></div>
+      <div class="phone newv">
+        <div class="art"></div><div class="veil"></div>
+        <div class="sheet">
+          <div class="hd"><h4>播放队列</h4><div class="sub">共 200 首 · 正在播放第 1 首</div></div>
+          <div class="row on"><span class="bars"><i></i><i></i><i></i></span><span class="body"><span class="t">Always Online</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">2</span><span class="body"><span class="t">我怀念的</span><span class="s">孙燕姿</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">3</span><span class="body"><span class="t">不得不爱</span><span class="s">潘玮柏 / 弦子</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">4</span><span class="body"><span class="t">爱丫爱丫</span><span class="s">By2</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">5</span><span class="body"><span class="t">遗失的心跳</span><span class="s">萧亚轩</span></span><span class="x">✕</span></div>
+          <div class="row"><span class="n">6</span><span class="body"><span class="t">我还想她</span><span class="s">林俊杰</span></span><span class="x">✕</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">右边封面的暖橙、冷紫、青蓝更明显地「渗」进卡片；左边基本还是一片乳白。文字对比度两边都够——正文仍是深灰压在半透白上。</p>
+
+  <h2>为什么三个数一起动</h2>
+  <table>
+    <tr><th>参数</th><th>改动</th><th>单独改会怎样</th></tr>
+    <tr><td>填充</td><td>58% → 50%</td><td>只降它：底下封面细节清晰，字和图形打架，像蒙了层塑料膜</td></tr>
+    <tr><td>磨砂</td><td>24 → 34</td><td>只加它：雾太厚，颜色被抹平，看着发灰而不通透</td></tr>
+    <tr><td>遮罩</td><td>22% → 14%</td><td>只降它：背后能看清内容，但玻璃和页面糊成一体，卡片浮不起来</td></tr>
+  </table>
+  <p class="note">顺序是：先让色透过（降填充）→ 再让透出来的东西变雾（加磨砂）→ 最后减少压暗（降遮罩）。三者配平，才是「厚玻璃」而不是「半透明纸」。</p>
+
+  <div class="split">
+    <div class="card">
+      <h3>可读性的下限在哪</h3>
+      <p>正文 <code>#16181D</code> 叠在 50% 白 + 深色封面上，实测对比度约 <b>5.6:1</b>，过 AA。再降到 46% 就掉到 4.5 边缘，所以自检把区间锁在 <code>48%~75%</code>，越界直接 FAIL。</p>
+    </div>
+    <div class="card">
+      <h3>深色主题同步</h3>
+      <p>深色跟随同一比例：近黑 48%、高光 24%、底部回光 7%。深色下玻璃更容易「看不见」，所以遮罩同样降、磨砂同样加，靠边缘的投影和上下反光维持轮廓。</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    构建：BUILD SUCCESSFUL · com.yinzhan.music / 1 / 1.0 · 自检 30 项 PASS 28 / WARN 2 / FAIL 0 · 改动文件：<code>ui/QueueSheet.ets</code>、<code>ui/QueueOverlay.ets</code>
+  </div>
+</div>
+</body>
+</html>

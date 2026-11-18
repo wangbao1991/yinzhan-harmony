@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音栈 v2.12 · 搜索「歌手」头像空白 诊断与修复</title>
+<style>
+:root{
+  --bg:#f4f8f7; --card:#ffffff; --ink:#18332e; --ink2:#4a6b63; --ink3:#7d9891;
+  --line:#d8e8e3; --teal:#0f9b8e; --teal2:#12b3a1; --tealbg:#e6f6f2;
+  --blue:#4b6bf5; --red:#d0524a; --amber:#b98318; --code:#0d2b26;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+  line-height:1.72;font-size:15px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:920px;margin:0 auto;padding:34px 20px 70px}
+h1{font-size:27px;line-height:1.35;margin:0 0 8px;letter-spacing:-.3px}
+.meta{color:var(--ink3);font-size:13px;margin-bottom:26px}
+h2{font-size:19px;margin:34px 0 12px;padding-left:11px;border-left:4px solid var(--teal)}
+h3{font-size:15.5px;margin:20px 0 8px;color:var(--teal)}
+p{margin:9px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;
+  box-shadow:0 3px 16px rgba(20,70,60,.05);margin:12px 0}
+.hero{background:linear-gradient(135deg,#e6f6f2,#f0fbf8 60%,#e8f1ff);
+  border:1px solid #c9e9e1;border-radius:16px;padding:20px 22px;margin:0 0 8px}
+.hero b{color:var(--teal)}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:13.6px;background:var(--card)}
+th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+th{background:var(--tealbg);color:var(--ink);font-weight:600;white-space:nowrap}
+td code,p code,li code{background:#eef5f3;color:var(--code);padding:1px 5px;border-radius:4px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.box{min-width:0}
+pre{background:#0f2521;color:#dcefe9;border-radius:10px;padding:13px 15px;overflow-x:auto;
+  white-space:pre;font-size:12.5px;line-height:1.6;margin:10px 0;min-width:0}
+pre .k{color:#7fd1c0}pre .s{color:#f0c98a}pre .c{color:#7e9c94}
+.tag{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:20px;
+  margin-right:6px;vertical-align:1px}
+.t-bad{background:#fdeceb;color:var(--red)}
+.t-ok{background:#e6f6f2;color:var(--teal)}
+.t-warn{background:#fdf4e2;color:var(--amber)}
+.t-info{background:#eaeefe;color:var(--blue)}
+ul,ol{margin:8px 0;padding-left:22px}
+li{margin:5px 0}
+.kpi{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}
+.kpi div{flex:1 1 150px;background:var(--card);border:1px solid var(--line);
+  border-radius:12px;padding:12px 14px}
+.kpi b{display:block;font-size:22px;color:var(--teal);line-height:1.3}
+.kpi span{font-size:12px;color:var(--ink3)}
+.note{background:#f0f7f5;border-left:3px solid var(--teal2);padding:10px 14px;
+  border-radius:0 8px 8px 0;font-size:13.5px;color:var(--ink2);margin:12px 0}
+.foot{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);
+  color:var(--ink3);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap box">
+
+<h1>搜索「歌手」头像空白 · 诊断与修复</h1>
+<div class="meta">音栈 v2.12（versionCode 23 / 2.12） · 2026-11-07 · 依据 5 张真机截图 + 4 个平台接口实测</div>
+
+<div class="hero">
+  <p style="margin:0"><b>结论：</b>不是深色模式把图变黑了，而是<b>头像 URL 根本没被取出来</b>，加上<b>占位渐变用了 ArkUI 不解析的 <code>hsl()</code> 字符串</b>，两层叠加后每个歌手只剩一个纯色圆圈和白色 <code>♪</code>。接口实测大多<b>本来就有头像</b>，是代码丢掉了。</p>
+</div>
+
+<h2>一、现象：五个源，同一个结果</h2>
+<div class="card">
+<table>
+<tr><th>搜索源</th><th>结果数量</th><th>头像位置</th><th>对应原因</th></tr>
+<tr><td>酷我</td><td>0（「没有找到歌手」）</td><td>—</td><td><code>searchArtists()</code> 没有酷我分支，直接返回空数组</td></tr>
+<tr><td>QQ</td><td>1（陶喆）</td><td>空圆 + ♪</td><td><code>avatar: ''</code> 硬编码</td></tr>
+<tr><td>网易云</td><td>9（含卢广仲、范玮琪…）</td><td>空圆 + ♪</td><td><code>avatar: ''</code> 硬编码</td></tr>
+<tr><td>酷狗</td><td>3（陶喆 / 景陶喆 / 陶喆(2)）</td><td>空圆 + ♪</td><td>搜索接口不返回 <code>imgurl</code></td></tr>
+<tr><td>咪咕</td><td>1（陶喆，浅色模式）</td><td>空圆 + ♪</td><td>搜索接口不返回 <code>img</code></td></tr>
+</table>
+<p style="color:var(--ink3);font-size:13px;margin-bottom:0">网易云那张出来 9 个名字，是从「相关歌手」搜索结果里按名字去重得来的，不是 9 张专辑。</p>
+</div>
+
+<h2>二、定量证据：圆圈里一点颜色都没有</h2>
+<div class="card">
+<p>对结果区（避开状态栏、搜索框、播放条）逐像素统计：</p>
+<div class="kpi">
+  <div><b>97~99.8%</b><span>深色图近黑像素占比</span></div>
+  <div><b>99.8%</b><span>浅色图近白像素占比</span></div>
+  <div><b>0.00%</b><span>三张图的「明显彩色」像素</span></div>
+  <div><b>≈ 0</b><span>圆圈中心 RGB 标准差</span></div>
+</div>
+<p>首个圆圈中心的 RGB 均值是 <code>[0,0,0]</code>（深色）/ <code>[255,255,255]</code>（浅色），标准差≈0 —— <b>纯色，没有任何渐变</b>。而 <code>Cover</code> 组件本应画一层按种子生成的彩色渐变：它把 <code>hsl(...)</code> 字符串直接传给 ArkUI 的 <code>linearGradient</code>，该属性不解析 hsl 格式，整块底色不渲染，只剩外层那圈 0.8vp 描边和白色 <code>♪</code>。所以「黑底」是<b>占位层没画出来</b>，深色模式只是提供了黑背景。</p>
+</div>
+
+<h2>三、三层根因</h2>
+<div class="card">
+<h3>1 · 数据层：接口有图，代码没取</h3>
+<p>四个接口都是本轮直接请求的真实返回：</p>
+<ul>
+<li><b>QQ</b> <code>smartbox_new.fcg</code> 的 <code>data.singer.itemlist[].pic</code> 有现成头像 <code>http://y.gtimg.cn/music/photo_new/T001R150x150M000...jpg</code>，<code>TxSmartItem</code> 也声明了 <code>pic</code>，但 <code>txSearchArtists()</code> 写死 <code>avatar: ''</code>。</li>
+<li><b>网易云</b> <code>type=100</code> 的 <code>result.artists[]</code> 带 <code>img1v1Url</code>（1:1 方图）和 <code>picUrl</code>，但 <code>WyArtist</code> 接口只声明了 <code>id/name</code>，<code>avatar</code> 同样写死空。</li>
+<li><b>酷狗</b> <code>/api/v3/search/singer</code> 实测只回 <code>singername</code> + <code>singerid</code>，<code>imgurl</code> 不存在；真头像在 <code>/api/v3/singer/info?singerid=…</code> 的 <code>imgurl</code>（带 <code>{size}</code> 占位）。</li>
+<li><b>咪咕</b> <code>search_all.do</code> 的 <code>singerResultData.result[]</code> 实测只有 <code>id / name / highlightStr</code>，无图。</li>
+<li><b>酷我</b> 未实现歌手搜索；其公开接口 <code>search.kuwo.cn/r.s</code> 返回<b>单引号非标准 JSON</b>，<code>JSON.parse</code> 会失败。</li>
+</ul>
+<p>头像 URL 全部实测<b>无防盗链、可直接 GET 200</b>：QQ https 化后 5.3KB、网易云 <code>img1v1Url</code> 1.2MB、酷狗 <code>fixCover</code> 替换 <code>{size}</code>→240 后 13.9KB。</p>
+
+<h3>2 · 渲染层：hsl 渐变不生效</h3>
+<p>见上一节。<code>Cover</code> 在 <code>uri</code> 为空时走 <code>Text('♪')</code>，而它下面的渐变 Column 因为颜色格式非法而整块透明。</p>
+
+<h3>3 · 产品语义：这些圆圈是歌手头像，不是专辑封面</h3>
+<p><code>artistList()</code> 用 <code>Cover({ side: 88, radius: 44 })</code> 画的是<b>圆形歌手头像</b>，专辑封面在工程里是方形卡片（<code>GlassSheetCard</code>，<code>kind='album'</code>）。两者形状、组件、数据来源都不同。</p>
+</div>
+
+<h2>四、修复对照</h2>
+<div class="card">
+<table>
+<tr><th>平台</th><th>v2.11</th><th>v2.12</th></tr>
+<tr><td>QQ</td><td><code>avatar: ''</code></td><td><code>fixCover(item.pic ?? '')</code>，http 自动转 https</td></tr>
+<tr><td>网易云</td><td><code>avatar: ''</code></td><td>补 <code>WyArtist.img1v1Url/picUrl</code>，取 <code>img1v1Url</code> 优先（1:1 方图适合圆头像）</td></tr>
+<tr><td>酷狗</td><td><code>fixCover(item.imgurl ?? '')</code>（实测恒空）</td><td>按 <code>singerid</code> 查 <code>singer/info</code> 拿 <code>imgurl</code>，并发补前 8 个，5s 超时失败返回空</td></tr>
+<tr><td>咪咕</td><td><code>fixCover(item.img ?? '')</code>（实测恒空）</td><td>接口确无图，交给首字占位兜底</td></tr>
+<tr><td>酷我</td><td>无分支 → 空结果</td><td>保持空结果并在代码里写明原因（非标 JSON，强行解析会带崩搜索页）</td></tr>
+</table>
+<div class="note"><b>酷狗的一个坑：</b>按 <code>singerid</code> 拼 <code>singerimg.kugou.com/uploadpic/softhead/400/<id>.jpg</code> 看起来能 200，但实测 3 个不同 id 下载到的文件 <b>MD5 完全相同</b>（同一张兜底图）——会让所有歌手变成一张脸。所以必须走 <code>singer/info</code> 的真实 <code>imgurl</code>，其路径带日期且每个歌手不同。</div>
+
+<h3>Cover 组件</h3>
+<pre><span class="c">// 新增：无图时用歌手名首字，而不是清一色的 ♪</span>
+<span class="k">@Prop</span> fallbackText: string = '';
+
+<span class="c">// 新增：占位渐变改为十六进制（ArkUI 不解析 hsl 字符串）</span>
+colors: [[placeholderGradient(<span class="k">this</span>.gradientSeed())[0], 0],
+         [placeholderGradient(<span class="k">this</span>.gradientSeed())[1], 1]]
+
+Text(<span class="k">this</span>.badge.length > 0 ? <span class="k">this</span>.badge
+   : (<span class="k">this</span>.fallbackText.length > 0 ? <span class="k">this</span>.fallbackText : <span class="s">'♪'</span>))</pre>
+<p><code>placeholderGradient()</code> 用 FNV-1a 按歌手名生成色相，输出 <code>#RRGGBB</code>（抽样：<code>陶 → #b5684a / #807f2d</code>，<code>陶喆 → #4aa5b5 / #2d3a80</code>），亮度压在中等区间，白色首字清晰可读，深色下也不再是黑圈。搜索列表与歌手详情页都传了 <code>fallbackText</code>，详情页顺便去掉了有图时多余的 <code>♪</code> 角标。</p>
+<p><code>seededGradient()</code> 原有的 hsl 返回值继续用于播放页与歌单卡片的渐变。</p>
+</div>
+
+<h2>五、「一般搜歌手出来的应该是专辑吧？」</h2>
+<div class="card">
+<p><span class="tag t-info">答复</span>搜「歌手」分类出来的是<b>歌手卡片</b>（头像 + 名字），这是 QQ 音乐、网易云等主流 App 的通行做法；<b>专辑是另一个独立分类</b>。点进歌手卡片进的是歌手主页，展示热门歌曲，专辑通常在主页里单独成区。</p>
+<p>本工程的具体结构是：</p>
+<ul>
+<li>搜索页只有「单曲 / 歌单 / 歌手」三个 tab；<code>SearchType</code> 里虽然定义了 <code>ALBUM = 3</code>，但没有启用，<code>search()</code> 的 <code>else</code> 分支会把 3 也当歌手搜。</li>
+<li>专辑数据其实存在：QQ smartbox 的 <code>data.album.itemlist[].pic</code> 有专辑封面，<code>txSearchAlbums()</code> 目前只作为「歌单接口不可用时的兜底」混入歌单结果，条目 <code>kind='album'</code>，由 <code>SheetDetailPage</code> 承接。</li>
+<li><code>ArtistPage</code> 目前只列<b>热门歌曲</b>（<code>SongRow</code>）+ 播放全部 + 搜同名歌手，没有专辑区。</li>
+</ul>
+<p>所以「应该出专辑」的直觉指向的是<b>工程缺一个专辑入口 / 歌手页缺专辑区</b>，而不是歌手搜索结果做错了。本次改动只作用于头像的取图与占位渲染；搜索分类结构为三个 tab、歌手页列热门歌曲，专辑数据以 <code>kind='album'</code> 存在于歌单详情页链路中。</p>
+</div>
+
+<h2>六、验证</h2>
+<div class="card">
+<table>
+<tr><th>项</th><th>结果</th></tr>
+<tr><td>干净构建 / 签名 / 验签</td><td><code>BUILD SUCCESSFUL</code>（33 tasks）、<code>sign-app success</code> → <code>verify-app success</code>、<code>Digest verify result: true</code></td></tr>
+<tr><td>版本双向核对</td><td><code>pack.info</code> 与 <code>module.json</code> 均为 <b>23 / 2.12</b></td></tr>
+<tr><td>工程自检</td><td>51 项 <b>PASS 49 / WARN 2 / FAIL 0</b>（2 项历史 WARN 按规则不修）</td></tr>
+<tr><td>包内 <code>modules.abc</code> 反查</td><td><code>placeholderGradient / hslToHex / fallbackText / gradientSeed / kgSingerAvatar / img1v1Url / picUrl / singer/info / imgurl</code> 全部命中；<code>geometryTransition / PLAY_STATS / lightSense</code> 保留</td></tr>
+<tr><td>改动前快照</td><td><code>yinzhan-v2.11-pre-artist-avatar-20261107-173104.zip</code>，SHA256 <code>561281f3…</code></td></tr>
+<tr><td>新 HAP SHA256</td><td><code>f74d9537…</code></td></tr>
+</table>
+<p style="color:var(--ink3);font-size:13px">接口实测在沙箱完成（4 个平台 JSON + 头像 URL GET），但<b>真机上的图片渲染与观感未实测</b>——沙箱无 HarmonyOS 设备。构建与符号反查只能证明逻辑进了包，不能代替实机确认。</p>
+</div>
+
+<h2>七、客观边界</h2>
+<div class="card">
+<ul>
+<li><b>酷我</b>切到该源仍显示「没有找到歌手」：其公开接口返回单引号非标准 JSON，本版没有引入自定义解析，避免解析失败把搜索页整块带崩。</li>
+<li><b>咪咕</b>接口不提供歌手图，显示歌手名首字的彩色色块，不会出现真人照片。</li>
+<li>当前为 OpenHarmony 公共签名，正式 HarmonyOS NEXT 真机仍需 AGC 证书；API 26 包最低只能装 API 26+ 设备。</li>
+<li>专辑能力在工程中以 <code>kind='album'</code> 与 <code>txSearchAlbums()</code> 存在；搜索页为三个 tab，<code>ArtistPage</code> 列热门歌曲。</li>
+</ul>
+</div>
+
+<div class="foot">音栈 · v2.12 歌手头像修复 · 本页随 HAP 一同交付，历史版本产物存于 <code>archive/</code></div>
+
+</div>
+</body>
+</html>

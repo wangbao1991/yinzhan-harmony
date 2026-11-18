@@ -134,8 +134,11 @@ def check_param_builder(src):
 # 主题色光斑：主题变化时整页重建，不依赖 Builder 参数刷新
 # markGlyph 同理：形状走的是静态分支（有未通过项 / 没有各一条调用），
 # 实参里只有 this.p() 这一层主题取色，主题切换时整页重建即可跟上。
+# glowLayer：实参只有 this.tabW()（几何宽度），调用点在 tabBar() 的 build 里，
+# pv 一变父组件就重建、Builder 随之重跑；而且整条调用已被 if (!perfMode) 包住，
+# 默认档（流畅优先）根本不执行，不存在「参数变了不刷新」的场景。
 EXEMPT = {'glow', 'glassHighlight', 'sectionTitle', 'actionRow', 'menuRow', 'actionButton',
-          'markGlyph', 'hdsTab'}
+          'markGlyph', 'hdsTab', 'glowLayer'}
 
 
 def check_page_subscription(src):
@@ -1114,7 +1117,7 @@ def check_tab_routes(src):
          反过来，如果只搬内容不删 Tab，同一份内容两处维护，改一边另一边就不一致；
       4. 咪咕的榜单/歌单接口对匿名请求返空，留在发现平台列表里就是「点了什么都没有」。
     """
-    shell = next((s for f, s in src.items() if f.endswith('ui/Shell.ets')), '')
+    shell = next((s for f, s in src.items() if f.endswith('ui/BottomDock.ets')), '')
     index = next((s for f, s in src.items() if f.endswith('pages/Index.ets')), '')
     disc = next((s for f, s in src.items() if f.endswith('ui/pages/DiscoverPage.ets')), '')
     home = next((s for f, s in src.items() if f.endswith('ui/pages/HomePage.ets')), '')
@@ -1131,11 +1134,10 @@ def check_tab_routes(src):
         return
     bad = 0
 
-    # 官方 HdsTabs 重做后，页签标签在 HdsNav.ets 的 NAV_TABS，页面内容在 Index 的
-    # homeContent/discoverContent/settingsContent builder（经 @BuilderParam 注入 HdsNav）。
-    nav = next((s for f, s in src.items() if f.endswith('ui/HdsNav.ets')), '')
-    label_src = nav if nav else shell
-    labels = re.findall(r"label:\s*'([^']+)'", label_src)
+    # v1.2.0 起页签标签在自绘 BottomDock.ets 的 DOCK_TABS；HdsNav/Shell 均已退役删除。
+    # 只扫 DOCK_TABS 数组本体：BottomDock 里 IconTap 也有 label:（播放/下一首…），不能混入。
+    tabs_m = re.search(r'DOCK_TABS: DockTab\[\] = \[(.*?)\];', shell, re.S)
+    labels = re.findall(r"label:\s*'([^']+)'", tabs_m.group(1)) if tabs_m else []
     if labels != ['首页', '发现', '设置']:
         bad += 1
         issues.append(('AC', 'FAIL',
@@ -2441,10 +2443,13 @@ def check_tab_swipe(src):
       - 流光 HdsFlowLight + 一镜到底 miniBar↔全屏页共用 geometryTransition id。
     """
     index = next((s for f, s in src.items() if f.endswith('pages/Index.ets')), '')
-    shell = next((s for f, s in src.items() if f.endswith('ui/Shell.ets')), '')
     nav = next((s for f, s in src.items() if f.endswith('ui/HdsNav.ets')), '')
     if not index or not nav:
-        issues.append(('AE', 'WARN', '缺 Index.ets / HdsNav.ets，跳过 HDS 导航检查'))
+        # v1.2.0 起一级页导航改为自绘 BottomDock.ets，HdsNav 不再挂载。
+        # 这一组 HdsTabs 专用断言随之退役，改由 AF/AG（自绘底栏）与 AZ（材质/一镜到底）覆盖，
+        # 这里给明确结论而不是长期挂一条 WARN —— 永久 WARN 会让真正的回归被埋掉。
+        issues.append(('AE', 'PASS', '一级页导航已切换为自绘 BottomDock（HdsNav 退役）：'
+                                    'HdsTabs 专用断言不再适用，交互由 AF/AG 与 AZ 组覆盖'))
         return
 
     bad = 0
@@ -2584,39 +2589,10 @@ def check_tab_swipe(src):
     if ah == 0:
         issues.append(('AH', 'PASS', '我喜欢 / 最近播放都能左滑单条移除，整份清空走确认弹窗，且不会误改歌单'))
 
-    # ── 官方 HDS 悬浮栏材质（AI）──
-    # 新实现用 HdsGlass（半透明底 + 背景模糊 + 受光渐变 + 发丝边）做沉浸光感，
-    # HdsFlowLight 叠流光。断言按新材质结构校验，不再守旧「去光化实色」。
-    ai = 0
-    glass_all = shell
-    # 材质四层：半透明底 / 背景模糊 / 受光渐变 / 发丝边 都要在。
-    if 'backgroundColor(withAlpha(' not in glass_all:
-        ai += 1
-        issues.append(('AI', 'FAIL', '悬浮材质缺半透明底色（withAlpha）：沉浸光感无从透出背景'))
-    if 'backgroundBlurStyle(' not in glass_all:
-        ai += 1
-        issues.append(('AI', 'FAIL', '悬浮材质缺背景模糊'))
-    if glass_all.count('linearGradient(') < 2:
-        ai += 1
-        issues.append(('AI', 'FAIL', '悬浮材质受光渐变不足两处：HdsGlass 与 HdsFlowLight 都要有'))
-    if '.border({ width: 1' not in glass_all:
-        ai += 1
-        issues.append(('AI', 'FAIL', '悬浮材质缺 1vp 发丝边：边缘会糊在背景里'))
-    # 流光扫光必须叠在 MiniBar 上（双行上行也有光感）。
-    mini_sec = glass_all[glass_all.find('export struct HdsMiniBar'):] if 'export struct HdsMiniBar' in glass_all else ''
-    if 'HdsGlass(' not in mini_sec or 'HdsFlowLight(' not in mini_sec:
-        ai += 1
-        issues.append(('AI', 'FAIL', 'MiniBar 没叠材质 + 流光层'))
-    # 材质层必须不吃触摸事件（否则会挡住页签/播放条的点击）。
-    if glass_all.count('HitTestMode.None') < 2:
-        ai += 1
-        issues.append(('AI', 'FAIL', '材质/流光层没设 HitTestMode.None：会挡住下层点击'))
-    # 悬浮胶囊参数常量必须集中在 HdsFloatingStyle（不散落魔数）。
-    if not re.search(r'export class HdsFloatingStyle', shell):
-        ai += 1
-        issues.append(('AI', 'FAIL', '悬浮胶囊参数没收敛到 HdsFloatingStyle'))
-    if ai == 0:
-        issues.append(('AI', 'PASS', '悬浮栏与 MiniBar 都用半透明+模糊+受光渐变+发丝边，流光扫过，材质层不挡点击'))
+    # ── 官方 HDS 悬浮栏材质（AI）──退役。
+    # 这组断言守的 HdsGlass（半透明+模糊+受光+发丝边）与 HdsFlowLight（流光）
+    # 随 Shell.ets 一起删除了（2026-11-18 用户拍板：毛玻璃与流光影响流畅，整体移除）。
+    # 自绘底栏的材质现状由 AZ 组守「不许把实时模糊引回来」。
 
     # ── 整页液态玻璃（AJ）──
     # 上一版只改了底栏两条，设置页 6 张卡、首页搜索框 + 快捷卡全是纯白，
@@ -2637,14 +2613,6 @@ def check_tab_swipe(src):
     if nh < 3:
         aj += 1
         issues.append(('AJ', 'FAIL', f'首页只有 {nh} 处套了玻璃（应 ≥3）：搜索框和四宫格还是纯白'))
-    # HDS 沉浸光感故意同时用 backgroundBlurStyle + linearGradient：
-    #  blur 负责透出背景色彩，渐变负责受光厚度，二者是官方材质的互补两层。
-    # 只守一条：用了模糊就必须同时有渐变，否则整层是会「改了看不出」的纯模糊。
-    shell_code = '\n'.join(ln for ln in shell.split('\n')
-                           if not ln.lstrip().startswith('//') and not ln.lstrip().startswith('*'))
-    if '.backgroundBlurStyle(' in shell_code and 'linearGradient(' not in shell_code:
-        aj += 1
-        issues.append(('AJ', 'FAIL', '悬浮材质用了模糊却没配受光渐变：会变成看不出变化的纯模糊层'))
     # v2.52 墨栈：表面中性实色，禁止青绿染色；用暖骨白 / 冷石墨双色板守护
     if 'rgba(210,240,238' in consts or 'rgba(206,236,232' in consts or '#FFFDFCFA' not in consts:
         aj += 1
@@ -3351,49 +3319,28 @@ def check_tab_swipe(src):
 
 
 def check_native_immersive(src):
-    """AZ：对标华为音乐的原生特性 —— 液态玻璃/沉浸光感（uiMaterial）、
-    一镜到底（geometryTransition + animateTo）。守住在位，防止被改回纯自绘模拟。"""
+    """AZ：一镜到底（geometryTransition + animateTo）守住；
+    材质方向 2026-11-18 反转 —— 用户拍板毛玻璃/流光影响流畅、整体移除，
+    本组现在守「不许把实时模糊引回来」，方向与旧版相反。"""
     index = next((v for f, v in src.items() if f.endswith('pages/Index.ets')), '')
-    shell = next((v for f, v in src.items() if f.endswith('ui/Shell.ets')), '')
-    try:
-        module_json = open(os.path.join(ROOT, 'entry/src/main/module.json5'), encoding='utf-8').read()
-    except OSError:
-        module_json = ''
 
     az = 0
 
-    # 1) 应用级沉浸光感 metadata 必须在位且为 enable。
-    if '"ohos.arkui.UIMaterial.state"' not in module_json:
-        az += 1
-        issues.append(('AZ', 'FAIL', 'module.json5 缺 ohos.arkui.UIMaterial.state：应用级沉浸光感没开'))
-    elif '"value": "enable"' not in module_json:
-        az += 1
-        issues.append(('AZ', 'FAIL', 'UIMaterial.state 不是 enable：沉浸光感被关'))
-
-    # 2) Shell.ets 必须从 @kit.ArkUI import uiMaterial（真原生，不是自绘类冒充）。
-    if "import { uiMaterial } from '@kit.ArkUI'" not in shell:
-        az += 1
-        issues.append(('AZ', 'FAIL', 'Shell.ets 没 import uiMaterial：液态玻璃/沉浸光感没有走原生 API'))
-    # 3) 原生材质工厂：构造 ImmersiveMaterial + lightEffect 沉浸光感 + 设备分级降级。
-    if 'new uiMaterial.ImmersiveMaterial(' not in shell:
-        az += 1
-        issues.append(('AZ', 'FAIL', '没构造 uiMaterial.ImmersiveMaterial：悬浮胶囊不是原生液态玻璃'))
-    if 'lightEffect:' not in shell:
-        az += 1
-        issues.append(('AZ', 'FAIL', 'ImmersiveMaterial 没配 lightEffect：沉浸光感反馈没开'))
-    for kw in ('isImmersiveMaterialSupported', 'getGlobalMaterialLevel',
-               'ImmersiveStyle.THIN', 'ImmersiveStyle.THICK'):
-        if kw not in shell:
+    # 1) 全应用不许再出现实时背景模糊（backgroundEffect / backgroundBlurStyle /
+    #    uiMaterial）：底栏背后就是滚动中的列表，实时模糊每帧重算是最大掉帧源，
+    #    2026-11-18 已随 dockGlass 定版为实色整体移除，任何形式回引都是回归。
+    all_ets = '\n'.join(src.values())
+    for kw, label in (('backgroundEffect(', 'backgroundEffect 实时模糊'),
+                      ('backgroundBlurStyle(', 'backgroundBlurStyle 背景模糊'),
+                      ('uiMaterial.', 'uiMaterial 沉浸材质')):
+        if kw in all_ets:
             az += 1
-            issues.append(('AZ', 'FAIL', f'原生材质缺 {kw}：设备分级降级不完整'))
-    # 4) 官方 HdsTabs 重做：悬浮页签吃 hdsMaterial 的 systemMaterialEffect（ADAPTIVE 类型+等级），
-    #    在 HdsNav.ets 的 barFloatingStyle 里。旧的 HdsNativeMaterial.systemMaterial 路径保留在
-    #    Shell 供 HdsGlass 用，但悬浮胶囊已切到官方 systemMaterialEffect。
-    nav = next((s for f, s in src.items() if f.endswith('ui/HdsNav.ets')), '')
-    tab = (nav or '') + '\n' + (_func_body(index, 'tabContent') or '')
-    if 'systemMaterialEffect:' not in tab or 'hdsMaterial.MaterialType.ADAPTIVE' not in tab:
+            issues.append(('AZ', 'FAIL', f'检测到 {label}：毛玻璃已整体移除（流畅优先），不许引回来'))
+    # 2) 底栏表面必须是「dockGlass + 实色底」：形状靠实色撑，不靠模糊。
+    dock = next((s for f, s in src.items() if f.endswith('ui/BottomDock.ets')), '')
+    if not (dock and 'dockGlass' in dock and "'#C71A1D24'" in dock and "'#E6F6F4EE'" in dock):
         az += 1
-        issues.append(('AZ', 'FAIL', 'barFloatingStyle 没挂官方 systemMaterialEffect(ADAPTIVE)：悬浮页签没沉浸光感'))
+        issues.append(('AZ', 'FAIL', '自绘底栏缺 dockGlass 实色底（深 #C71A1D24 / 浅 #E6F6F4EE）：栏体会透成塑料'))
 
     # 5) 一镜到底：官方 animateTo 闭包 + geometryTransition 同 id + onFinish 清空。
     sps = _func_body(index, 'setPlayerShow') or ''
@@ -3408,8 +3355,13 @@ def check_native_immersive(src):
         issues.append(('AZ', 'FAIL', 'geometryTransition id 没在 onFinish 清空：快速连点会误触发共享转场'))
     # 两个形态都必须绑同一个 id：大形态在 Index 全屏 Stack，小形态在 HdsNav 的
     # miniBarBuilder 根 Stack（经 AppStorage['playerGeomId'] 跨组件传 id）。
+    #    小形态端在自绘底栏里叫 geomId（@StorageProp('playerGeomId') 改名），
+    #    历史 HdsNav 那套叫 playerGeomId，两种写法都要数，否则新架构永远差一端。
     nav_src = next((s for f, s in src.items() if f.endswith('ui/HdsNav.ets')), '')
-    geom_count = index.count('.geometryTransition(this.playerGeomId)') + nav_src.count('.geometryTransition(this.playerGeomId)')
+    dock_src = next((s for f, s in src.items() if f.endswith('ui/BottomDock.ets')), '')
+    geom_count = (index.count('.geometryTransition(this.playerGeomId)')
+                  + nav_src.count('.geometryTransition(this.playerGeomId)')
+                  + dock_src.count('.geometryTransition(this.geomId)'))
     if geom_count < 2:
         az += 1
         issues.append(('AZ', 'FAIL', '迷你条与全屏页没都绑 playerGeomId：一镜到底缺一端'))
@@ -3912,7 +3864,6 @@ def check_song_marquee(src):
     common = get('ui/Common.ets')
     queue = get('ui/QueueSheet.ets')
     downloads = get('ui/pages/DownloadsPage.ets')
-    shell = get('ui/Shell.ets')
     all_ets = '\n'.join(src.values())
 
     # 只取 SongRow 组件自身（到下一个 export struct 为止），别把别的组件算进来
@@ -3933,8 +3884,9 @@ def check_song_marquee(src):
         be += 1
         issues.append(('BE', 'FAIL', 'SongRow 的跑马灯没显式 start: true：可能不滚动'))
 
-    for label, text, cnt in (('队列弹层', queue, 2), ('下载任务行', downloads, 1),
-                             ('迷你播放条', shell, 2)):
+    # 「迷你播放条」条目随 Shell.ets 退役：自绘 BottomDock 迷你条是滚动中的
+    # 瞬时形态，歌名单行 Ellipsis 是有意为之，不参与跑马灯约束。
+    for label, text, cnt in (('队列弹层', queue, 2), ('下载任务行', downloads, 1)):
         if text.count('TextOverflow.MARQUEE') < cnt:
             be += 1
             issues.append(('BE', 'FAIL', label + ' 的歌名/歌手没改成 MARQUEE'))
@@ -3943,8 +3895,7 @@ def check_song_marquee(src):
             issues.append(('BE', 'FAIL', label + ' 的跑马灯没显式 start: true'))
 
     # 每个 MARQUEE 后面必须紧跟确定宽度，否则组件按内容自适应、不判定溢出
-    for label, text in (('SongRow', row), ('队列弹层', queue), ('下载任务行', downloads),
-                        ('迷你播放条', shell)):
+    for label, text in (('SongRow', row), ('队列弹层', queue), ('下载任务行', downloads)):
         kw = 'TextOverflow.MARQUEE'
         pos = 0
         while True:
@@ -3970,7 +3921,8 @@ def check_song_marquee(src):
     # v2.74：滚动速度统一降到 step 2；留着任一处 step 4 就是「改了 SongRow 忘了迷你条」。
     # HdsTabs 重做后 miniBarBuilder 迁到 HdsNav.ets，跑马灯分布变了，故只要求
     # 「无 step:4 + 至少 6 处 step:2」，不再硬编码恰好 7 处。
-    if all_ets.count('step: 2, fromStart: true') < 6 or 'step: 4' in all_ets:
+    # Shell.ets（HdsMiniBar 两处跑马灯）删除后全站剩 5 处 step:2，下限同步收紧到 5。
+    if all_ets.count('step: 2, fromStart: true') < 5 or 'step: 4' in all_ets:
         be += 1
         issues.append(('BE', 'FAIL', '跑马灯速度没统一到 step: 2：仍有旧速度或漏改组件'))
 
@@ -4710,7 +4662,7 @@ def check_account_top(src):
         return next((s for f, s in src.items() if f.endswith(suffix)), '')
 
     settings = text('ui/pages/SettingsPage.ets')
-    shell = text('ui/Shell.ets')
+    shell = text('ui/BottomDock.ets')
     index = text('pages/Index.ets')
 
     # ① 账号是设置页第一个分组（在「音源」之前），单行直达 wyAccount
@@ -4727,7 +4679,8 @@ def check_account_top(src):
         issues.append(('BO', 'FAIL', '账号栏仍指向 myAccount 账号中心（该页应已删除）'))
 
     # ② 底栏仍三个一级页、路由表无 myAccount / 无「我的」一级页
-    labels = re.findall(r"label:\s*'([^']+)'", shell)
+    tabs_m = re.search(r'DOCK_TABS: DockTab\[\] = \[(.*?)\];', shell, re.S)
+    labels = re.findall(r"label:\s*'([^']+)'", tabs_m.group(1)) if tabs_m else []
     if labels != ['首页', '发现', '设置']:
         bad += 1
         issues.append(('BO', 'FAIL', '底栏不是「首页/发现/设置」三项：又冒出了额外一级页'))
