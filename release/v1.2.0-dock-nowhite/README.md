@@ -26,16 +26,11 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `音栈-v1.2.0-液态磨砂去白-signed.hap` | **已签名，可直接侧载安装**（3,364,049 字节） |
-| `音栈-v1.2.0-液态磨砂去白-unsigned.hap` | 未签名，供 AGC 正式证书或 DevEco 重签（3,312,840 字节） |
 | `音栈-v1.2.0-液态磨砂去白-源码工程.zip` | 完整源码工程，195 条目，解压即 `LXMusicHarmony/` |
-| `SHA256SUMS.txt` | 三个交付物的校验值 |
-
-已签名 HAP 使用 OpenHarmony 公共调试证书（`compatibleVersion 26`，bundleName `com.yinzhan.music`），适用于侧载；正式分发需用自有 AGC 证书对 unsigned 包重签。签名材料不随仓库分发。
+| `SHA256SUMS.txt` | 交付物的校验值 |
 
 ## 验证
 
 - API 26 release `BUILD SUCCESSFUL`（34 tasks）；自检 71 项 PASS 65 / WARN 4 / FAIL 2（2 项为基线自带历史断言，改动前后一致）。
-- `sign-app success`；`verify-app` → `Verify success`。
 - 落包反查：`3DFAF9F5` 命中，`4DFBFBFB` 归零，`331A1D24` 保留。
 - 包身份：`com.yinzhan.music / 87 / 1.2.0`。

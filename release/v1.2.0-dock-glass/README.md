@@ -38,12 +38,9 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `音栈-v1.2.0-液态磨砂通透-signed.hap` | **已签名，可直接侧载安装**（3,364,041 字节） |
-| `音栈-v1.2.0-液态磨砂通透-unsigned.hap` | 未签名，供 AGC 正式证书或 DevEco Studio 重签（3,312,848 字节） |
 | `音栈-v1.2.0-液态磨砂通透-源码工程.zip` | 完整源码工程，195 条目，解压即 `LXMusicHarmony/` |
-| `SHA256SUMS.txt` | 三个交付物的校验值 |
+| `SHA256SUMS.txt` | 交付物的校验值 |
 
-已签名 HAP 使用 OpenHarmony 公共调试证书（`compatibleVersion 26`，bundleName `com.yinzhan.music`），适用于侧载；正式分发需用自有 AGC 证书对 unsigned 包重签。签名材料（`.p12` / `.pem` / `.p7b`）按工程铁律**不入库**。
 
 本目录通过局部 `.gitignore` 显式解除根目录对 `*.hap` / `*.zip` 的忽略，仓库根目录的开源忽略策略保持不变。
 

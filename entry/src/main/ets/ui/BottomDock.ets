@@ -331,7 +331,13 @@ export struct BottomDock {
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .onClick((): void => {
-      if (this.onChangeTab && index !== this.curTab) {
+      // 收缩态：三格已经被裁成只剩左边一枚圆，此时点它应该是「展开」，
+      // 不是「切首页」。三格层 opacity 归零后**依然可命中**（ArkUI 的
+      // opacity 不影响 hitTest），所以收缩态点在圆上会先落到第一格上 ——
+      // 这里按进度分流，把命中接住转成展开。
+      if (this.t() >= 0.42) {
+        this.expandDock();
+      } else if (this.onChangeTab && index !== this.curTab) {
         this.onChangeTab(index);
       }
     })
@@ -423,10 +429,11 @@ export struct BottomDock {
     .height(DockSize.TAB_H)
     .position({ x: DockSize.SIDE, y: this.tabY() })
     .opacity(0)
-    // 常驻挂载，只切命中开关：以前是 if (t<0.5) 才建/拆这层，
-    // 收缩刚好跨过 0.5 那一帧要新建三个格子，正是「收到底时略顿一下」的来源。
-    // 命中开关是纯属性，切换不建节点，也不会挡住在圆上点击展开。
-    .hitTestBehavior(this.t() < 0.5 ? HitTestMode.Default : HitTestMode.None)
+    // 这层由调用方按进度**条件挂载**（见 build），命中开关不做动态切换。
+    // 曾经写过「常驻挂载 + hitTestBehavior(t<0.5 ? Default : None)」，以为只是
+    // 切一个纯属性、不建节点；实际 hitTestBehavior 在组件创建后**不随状态重算**，
+    // 于是这一层在收缩态继续铺满整行吃掉点击 —— 点收缩后的播放条，事件落到
+    // 三格命中层上，直接切到了「发现/设置」。这就是 v1.3.0/92 的真机回归。
   }
 
   // ── 播放条 ──
@@ -541,11 +548,13 @@ export struct BottomDock {
     .width(this.miniW())
     .height(DockSize.MINI_H)
     .borderRadius(DockSize.MINI_H / 2 - 0.5)
-    // 锚点固定，位移改成 translate：
-    // position 是布局属性，每帧变一次父容器就要重排一次；translate 只是变换，
-    // 不进布局。收缩全程几十帧，这一项省下的就是滚动时的主线程时间。
-    .position({ x: DockSize.SIDE, y: 0 })
-    .translate({ x: this.miniX() - DockSize.SIDE, y: this.miniY() })
+    // 位移必须用 position —— 不要为了省重排换成 translate。
+    // translate 是**图形变换**：只改绘制矩阵，命中测试仍按布局矩形走。收缩后
+    // 播放条视觉上滑到页签圆右边，热区却还留在展开态那一行，表现就是
+    // 「收缩态下三个键点了完全没反应」（v1.3.0 / 91 真机回归，上一版用
+    // translate 替 position 省重排时引入）。position 参与布局，视觉与热区一致。
+    // 这里每帧重排的范围只有底栏这一个 Stack（两个子节点），成本可忽略。
+    .position({ x: this.miniX(), y: this.miniY() })
     // 不再 clip：内容按容器宽度布局，本来就不溢出；少一层裁剪就少一次离屏层重建
     // 一镜到底的小形态：与全屏播放页共用同一个 id。
     .geometryTransition(this.geomId)
@@ -570,8 +579,13 @@ export struct BottomDock {
           this.miniBar()
         }
         this.tabBar()
-        // 命中层常驻（命中开关随进度切），不再按 t 增删节点
-        this.tabHit()
+        // 命中层只在前半程挂载：三格在 t=0.45 已淡出，0.42 之后整层拆掉。
+        // 拆（不是新建）发生在内容不可见之后，滚动里看不出顿挫；而「常驻 + 动态
+        // 切 hitTestBehavior」会把收缩态的整行点击全吞掉（hitTestBehavior 不随
+        // 状态重算），这是踩过的坑，别再合并回一行。
+        if (this.t() < 0.42) {
+          this.tabHit()
+        }
       }
     }
     .width('100%')

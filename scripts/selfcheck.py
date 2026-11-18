@@ -3369,8 +3369,27 @@ def check_native_immersive(src):
         az += 1
         issues.append(('AZ', 'FAIL', 'Index 没把 playerGeomId 写进 AppStorage：HdsNav 小形态拿不到共享 id'))
 
+    # 6) 播放条位移必须用 position：translate 是图形变换，**不参与命中测试** ——
+    #    收缩后视觉滑到页签圆右边、热区还留在展开态那一行，表现为「三个键点了没反应」
+    #    （v1.3.0/91 真机回归，就是拿 translate 替 position 省重排引入的）。
+    mini_body = _func_body(dock_src, 'miniBar') if dock_src else ''
+    mini_code = '\n'.join(ln for ln in mini_body.split('\n') if not ln.lstrip().startswith('//'))
+    if mini_code and '.translate(' in mini_code:
+        az += 1
+        issues.append(('AZ', 'FAIL', '播放条位移用了 translate：图形变换不参与命中，收缩态下播放键/下一首/队列都点不到（必须用 position）'))
+
+    # 7) 页签命中层（tabHit）必须按收缩进度**条件挂载**。
+    #    hitTestBehavior 在组件创建后不随状态重算，写成「常驻 + 动态切 None」
+    #    会让它在收缩态继续铺满整行、把点击全吃掉：点收缩后的播放条，事件落到
+    #    三格命中层上，直接切到「发现/设置」（v1.3.0/92 真机回归）。
+    hit_calls = [m.start() for m in re.finditer(r'this\.tabHit\(\)', dock_src)]
+    unguarded = [p for p in hit_calls if 'if (this.t() <' not in dock_src[max(0, p - 300):p]]
+    if unguarded:
+        az += 1
+        issues.append(('AZ', 'FAIL', 'tabHit 命中层没有按收缩进度条件挂载：收缩后仍会吞掉底栏整行点击（hitTestBehavior 不随状态重算）'))
+
     if az == 0:
-        issues.append(('AZ', 'PASS', '应用级沉浸光感 enable + 悬浮页签原生液态玻璃(ImmersiveMaterial/lightEffect,设备分级) + geometryTransition 一镜到底(animateTo 同 id) 均在位'))
+        issues.append(('AZ', 'PASS', '全应用无实时模糊/沉浸材质（毛玻璃已移除）+ 底栏实色底 + 一镜到底 geometryTransition 同 id 且在位 + 播放条位移走 position（热区跟得上）'))
 
 
 def check_smart_hunt(src):
@@ -4472,6 +4491,13 @@ def check_discover_feed(src):
         bad += 1
         issues.append(('BM', 'FAIL',
                        '只有 %d 处「接口失败→板块缺席」，官方接口挂了会塞假数据或整页崩' % absent))
+    # 广告位必须挡掉：网易云 /api/banner/get 是广告位，会返回整幅投放图
+    # （typeTitle=「广告」/ targetType=3000 站外活动页 / 带 adid），酷狗 banner 里
+    # 也有 type=3 的广告位。这些点开只能跳站外，不进发现页。
+    if 'isAdBanner(' not in feed or "indexOf('广告')" not in feed:
+        bad += 1
+        issues.append(('BM', 'FAIL', 'banner 没过滤广告位：官方接口会把广告当内容拉进发现页'))
+
     # 酷我两个实测坑：data.data 才是数组，榜单击进去的 id 用 sourceid
     if 'resp.data?.data ?? []' not in feed:
         bad += 1

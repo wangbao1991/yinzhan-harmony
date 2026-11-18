@@ -120,6 +120,32 @@ function snapshotMore(title: string, platform: string, source: string): Discover
   return newDiscoverMore(source, title, platform, '', false, false, false);
 }
 
+/**
+ * banner 里的推广位要挡掉。
+ *
+ * 各平台都把首页 banner 当广告位卖：网易云 `/api/banner/get` 会直接返回
+ * 「王老吉夏日态度罐」这类整幅广告图，酷狗也会在 banner 数组里塞 type=3 的广告。
+ * 用户要的是「发现音乐」，不是「看开屏广告」；而且广告点开是站外活动页，
+ * App 内没有容器，只能退化成按标题搜索，点进去是空结果 —— 更糟。
+ *
+ * 判据（2026-11-19 实测网易云返回体，广告项特征稳定）：
+ *   · typeTitle 标了「广告」；
+ *   · targetType = 3000（站外活动页，正常内容只有 10 专辑 / 1000 歌单 / 1005 专栏）；
+ *   · 带 adid / adSource（投放系统编号）。
+ * 任一命中即丢弃；宁可 banner 少一条，也不把广告当内容。
+ */
+function isAdBanner(b: WyBannerItem): boolean {
+  if ((b.typeTitle ?? '').indexOf('广告') >= 0) {
+    return true;
+  }
+  if ((b.targetType ?? 0) === 3000) {
+    return true;
+  }
+  const hasAdId: boolean = b.adid !== undefined && b.adid !== null;
+  const hasAdSource: boolean = (b.adSource ?? '').length > 0;
+  return hasAdId || hasAdSource;
+}
+
 /** 榜单类「更多」：直接进既有 rankboard 页（子榜 tab + 歌曲列表，本就是官方榜单完整视图） */
 function rankMore(title: string, platform: string): DiscoverMore {
   return newDiscoverMore('rank', title, platform, '', false, false, true);
@@ -151,6 +177,9 @@ interface WyBannerItem {
   typeTitle?: string;
   targetType?: number;
   targetId?: number;
+  /** 投放系统编号：广告位才非空（见 isAdBanner） */
+  adid?: number | null;
+  adSource?: string | null;
 }
 interface WyBannerResp { banners?: WyBannerItem[]; }
 interface WyDailyItem {
@@ -341,6 +370,10 @@ export class DiscoverFeed {
       const resp = await getJson<WyBannerResp>('https://music.163.com/api/banner/get?type=2', WY_REF);
       const items: DiscoverItem[] = [];
       for (const b of resp.banners ?? []) {
+        // 广告位不进发现页（王老吉那类整幅投放图，点开还是站外活动页）
+        if (isAdBanner(b)) {
+          continue;
+        }
         const it = newDiscoverItem();
         const targetId = numText(b.targetId);
         const targetType = b.targetType ?? 0;
@@ -582,6 +615,10 @@ export class DiscoverFeed {
       // Banner：extra.specialid 是官方歌单 id，能真正打开详情页
       const banners: DiscoverItem[] = [];
       for (const b of resp.banner ?? []) {
+        // 酷狗 banner 里混着广告位（type=3，没有 specialid，点开只能跳站外活动页）
+        if ((b.type ?? 0) === 3 || (b.title ?? '').indexOf('广告') >= 0) {
+          continue;
+        }
         const it = newDiscoverItem();
         const specialId = numText(b.extra?.specialid);
         it.id = firstNonEmpty(specialId, numText(b.id));

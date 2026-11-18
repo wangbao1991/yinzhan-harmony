@@ -1,3 +1,2 @@
-715083880be58952adddccc83afd2df1b584072b6f23f98d17c1d62710d87b9b  音栈-v1.2.0-流畅优先加实-signed.hap
 0b7a2cd75ad18cab7f2a981226f71024c1e3dee2dc3186d222f6d7fd94c087ae  音栈-v1.2.0-流畅优先加实-unsigned.hap
 79f319850cb90076703068a8c2c0a6d20d3c5ab7d57e470f86fc7dcd6d5b8de3  音栈-v1.2.0-流畅优先加实-源码工程.zip

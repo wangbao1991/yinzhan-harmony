@@ -29,15 +29,10 @@ Scroll 的可见区域只到「屏幕底 − 150」，再往下全被裁剪。�
 
 | 文件 | 说明 |
 | --- | --- |
-| `音栈-v1.2.0-视口到底-signed.hap` | **已签名，可直接侧载安装**（3,364,081 字节） |
-| `音栈-v1.2.0-视口到底-unsigned.hap` | 未签名，供 AGC 正式证书或 DevEco 重签（3,312,808 字节） |
 | `音栈-v1.2.0-视口到底-源码工程.zip` | 完整源码工程，195 条目，解压即 `LXMusicHarmony/` |
-| `SHA256SUMS.txt` | 三个交付物的校验值 |
-
-已签名 HAP 使用 OpenHarmony 公共调试证书（`compatibleVersion 26`，bundleName `com.yinzhan.music`），适用于侧载；正式分发需用自有 AGC 证书对 unsigned 包重签。签名材料不随仓库分发。
+| `SHA256SUMS.txt` | 交付物的校验值 |
 
 ## 验证
 
 - API 26 release `BUILD SUCCESSFUL`（34 tasks）；自检 71 项 PASS 65 / WARN 4 / FAIL 2（基线自带历史断言）。
-- `sign-app success`；`verify-app` → `Verify success`。
 - 包身份：`com.yinzhan.music / 87 / 1.2.0`。
