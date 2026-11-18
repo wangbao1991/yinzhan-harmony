@@ -2,7 +2,7 @@
 
 用 ArkTS / ArkUI 从零编写的 HarmonyOS / OpenHarmony 原生音乐播放器。Stage 模型、API 26（OpenHarmony 7.0）、零三方依赖、可离线命令行构建。
 
-当前版本：**v1.2.0**（`versionName 1.2.0` / `versionCode 87`）—— 仓库根目录即该版本的完整源码。
+当前版本：**v1.3.0**（`versionName 1.3.0` / `versionCode 91`）—— 仓库根目录即该版本的完整源码。
 
 ## 这是什么
 
@@ -50,7 +50,8 @@ hvigor/                    构建配置
 
 | 目录 | 版本 | 内容 |
 | --- | --- | --- |
-| [`release/v1.2.0-performance-first`](release/v1.2.0-performance-first) | `87 / 1.2.0` | **最新**：以流畅为先（perfMode 默认开、实色 78%/90%、去流光/按压/坐标广播）+ 源码工程 zip + 已签名 HAP + unsigned HAP + 校验值 |
+| [`release/v1.3.0`](release/v1.3.0) | `91 / 1.3.0` | **最新**：底栏弹簧丝滑伸缩（springMotion 可中断）+ 毛玻璃与流光整体移除 + 字号归档（30 处）/ 收起态两行歌名 + 源码工程 zip + 已签名 HAP + unsigned HAP + 校验值 |
+| [`release/v1.2.0-performance-first`](release/v1.2.0-performance-first) | `87 / 1.2.0` | 前序快照：以流畅为先（perfMode 默认开、实色 78%/90%、去流光/按压/坐标广播） |
 | [`release/v1.2.0-perfmode-solid`](release/v1.2.0-perfmode-solid) | `87 / 1.2.0` | 前序快照：流畅优先档「加实」（70%/85%） |
 | [`release/v1.2.0-perfmode`](release/v1.2.0-perfmode) | `87 / 1.2.0` | 前序快照：新增「流畅优先」开关（该档偏透） |
 | [`release/v1.2.0-perf`](release/v1.2.0-perf) | `87 / 1.2.0` | 前序快照：流畅性优化（底栏去双层模糊） |
@@ -59,7 +60,7 @@ hvigor/                    构建配置
 | [`release/v1.2.0-dock-glass`](release/v1.2.0-dock-glass) | `87 / 1.2.0` | 前序快照：液态磨砂通透版（浅色仍偏白） |
 | [`release/v1.2.0-dock-taller`](release/v1.2.0-dock-taller) | `87 / 1.2.0` | 前序快照：底栏加宽到 52vp（材质仍为不透明底） |
 
-也可以在 [Releases](https://github.com/wangbao1991/yinzhan-harmony/releases) 直接下载 `YinZhan-v1.2.0-signed.hap`。签名材料不随仓库分发，正式分发请用自有 AGC 证书对 unsigned 包重签。
+也可以在 [Releases](https://github.com/wangbao1991/yinzhan-harmony/releases) 直接下载 `音栈-v1.3.0-signed.hap`。签名材料不随仓库分发，正式分发请用自有 AGC 证书对 unsigned 包重签。
 
 ## 第三方组件
 
